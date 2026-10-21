@@ -116,6 +116,50 @@ final class DebtRepo
         ];
     }
 
+    public const SEED_NAMES = [
+        'สมชาย', 'สมหญิง', 'มานี', 'มานะ', 'ปิติ', 'ชูใจ', 'วีระ', 'สุดา', 'สมศักดิ์', 'สมปอง',
+        'อรทัย', 'ประเสริฐ', 'วิชัย', 'สุนิสา', 'กนกวรรณ', 'ธีรพงษ์', 'นภา', 'พิมพ์ใจ', 'ศิริพร', 'อนุชา',
+    ];
+
+    /** Inserts $n random rows tagged note='[seed]' in one transaction; returns the count inserted. */
+    public static function seed(int $n, bool $reset): int
+    {
+        $pdo = Db::pdo();
+        $pdo->beginTransaction();
+        try {
+            if ($reset) {
+                self::deleteSeed();
+            }
+            $lastSize = 0;
+            $stmt = null;
+            for ($done = 0; $done < $n; $done += 500) {
+                $size = min(500, $n - $done);
+                if ($size !== $lastSize) {
+                    $rows = implode(',', array_fill(0, $size, "(?, ?, '[seed]', ?)"));
+                    $stmt = $pdo->prepare('INSERT INTO debts (friend_name, amount, note, is_paid) VALUES ' . $rows);
+                    $lastSize = $size;
+                }
+                $values = [];
+                for ($i = 0; $i < $size; $i++) {
+                    $values[] = self::SEED_NAMES[random_int(0, count(self::SEED_NAMES) - 1)];
+                    $values[] = random_int(1, 500) * 10;
+                    $values[] = random_int(1, 10) <= 3 ? 1 : 0;
+                }
+                $stmt->execute($values);
+            }
+            $pdo->commit();
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+        return $n;
+    }
+
+    public static function deleteSeed(): int
+    {
+        return Db::pdo()->exec("DELETE FROM debts WHERE note = '[seed]'");
+    }
+
     private static function iso(string $datetime): string
     {
         return str_replace(' ', 'T', $datetime) . 'Z';

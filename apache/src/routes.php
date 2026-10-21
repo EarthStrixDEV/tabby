@@ -3,12 +3,21 @@ declare(strict_types=1);
 
 require __DIR__ . '/Validation.php';
 require __DIR__ . '/DebtRepo.php';
+require __DIR__ . '/RateLimiter.php';
 require __DIR__ . '/handlers/ping.php';
 require __DIR__ . '/handlers/debts.php';
 require __DIR__ . '/handlers/summary.php';
 require __DIR__ . '/handlers/cache.php';
+require __DIR__ . '/handlers/testapi.php';
 
 Router::add('GET', '/api/ping', 'handle_ping');
+Router::add('GET', '/api/slow', 'handle_slow');
+foreach (['GET', 'POST', 'PUT', 'DELETE'] as $method) {
+    Router::add($method, '/api/echo', 'handle_echo');
+}
+Router::add('POST', '/api/seed', 'handle_seed_create');
+Router::add('DELETE', '/api/seed', 'handle_seed_delete');
+Router::add('GET', '/api/limited', 'handle_limited');
 Router::add('GET', '/api/debts', 'handle_debts_list');
 Router::add('POST', '/api/debts', 'handle_debts_create');
 Router::add('GET', '/api/debts/{id}', 'handle_debts_get');
