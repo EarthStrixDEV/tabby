@@ -28,7 +28,118 @@
         <p class="page-head__sub">วัดแบนด์วิดท์ แคช และการรับโหลดของโฮสติ้งนี้</p>
       </div>
     </div>
-    <!-- test.js renders the token card and the tool cards into a .tool-grid here. -->
+    <div class="tool-grid">
+      <section class="tool-card tool-card--wide" aria-labelledby="token-title">
+        <h2 id="token-title">รหัสทดสอบ</h2>
+        <div class="field">
+          <label class="field__label" for="token-input">X-Test-Token</label>
+          <input class="field__input" id="token-input" type="password" autocomplete="off" spellcheck="false" aria-describedby="token-help" data-testid="token-input">
+          <p class="field__help" id="token-help">ใช้กับ download, upload, slow, seed และล้างแคช เก็บไว้ในหน้านี้เท่านั้น ปิดหน้าแล้วหาย</p>
+        </div>
+      </section>
+
+      <section class="tool-card" id="bw-card" aria-labelledby="bw-title">
+        <h2 id="bw-title">Bandwidth</h2>
+        <div class="field">
+          <label class="field__label" for="bw-size">ขนาดไฟล์ดาวน์โหลด</label>
+          <select class="field__input" id="bw-size" data-testid="bw-size">
+            <option value="1">1 MB</option>
+            <option value="10" selected>10 MB</option>
+            <option value="100">100 MB</option>
+          </select>
+        </div>
+        <div class="meter">
+          <div>
+            <p class="meter__label desktop-only">ดาวน์โหลด</p>
+            <p class="meter__value"><span id="bw-down" data-testid="bw-speed">—</span><span class="meter__unit">Mbps<span class="mobile-only"> ดาวน์โหลด</span></span></p>
+          </div>
+          <div class="desktop-only">
+            <p class="meter__label">อัปโหลด</p>
+            <p class="meter__value"><span id="bw-up">—</span><span class="meter__unit">Mbps</span></p>
+          </div>
+        </div>
+        <div class="progress" id="bw-progress" role="progressbar" aria-label="ความคืบหน้าดาวน์โหลด" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-testid="bw-progress"></div>
+        <p class="meter__sub" id="bw-round" aria-live="polite"></p>
+        <p class="meter__sub mobile-only" id="bw-up-last" hidden></p>
+        <dl class="stats stats--3">
+          <div><dt>TTFB</dt><dd id="bw-ttfb">—</dd></div>
+          <div><dt>เวลารวม</dt><dd id="bw-total">—</dd></div>
+          <div><dt>5 พร้อมกัน</dt><dd id="bw-5x">—</dd></div>
+        </dl>
+        <div class="tool-card__actions">
+          <button class="btn btn--primary" id="bw-start-dl" type="button" data-testid="bw-start-dl">เริ่มดาวน์โหลด</button>
+          <button class="btn btn--secondary" id="bw-start-ul" type="button" data-testid="bw-start-ul">ทดสอบอัปโหลด</button>
+        </div>
+        <div class="tool-card__actions">
+          <button class="btn btn--secondary" id="bw-start-5x" type="button" data-testid="bw-start-5x">5 พร้อมกัน</button>
+        </div>
+        <p class="field__error" id="bw-error" role="alert" hidden></p>
+      </section>
+
+      <section class="tool-card" id="cache-card" aria-labelledby="cache-title">
+        <div class="tool-card__head">
+          <h2 id="cache-title">Caching</h2>
+          <div class="tool-card__tools">
+            <button class="btn btn--secondary btn--sm" id="cache-run" type="button" data-testid="cache-run">ตรวจใหม่</button>
+            <button class="btn btn--secondary btn--sm" id="cache-clear" type="button">ล้างแคชแอป</button>
+          </div>
+        </div>
+        <p class="tool-card__note">การตรวจนี้เขียนและลบข้อมูลชั่วคราว 1 แถว</p>
+        <p class="tool-card__note" id="cache-stats"></p>
+        <p class="field__error" id="cache-error" role="alert" hidden></p>
+        <ul class="checks" id="cache-list"></ul>
+        <p class="checks__summary" id="cache-summary" aria-live="polite"></p>
+      </section>
+
+      <section class="tool-card tool-card--wide" id="api-card" aria-labelledby="api-title">
+        <h2 id="api-title">API Request</h2>
+        <div class="tool-split">
+          <div class="tool-split__side">
+            <div class="field">
+              <label class="field__label" for="api-endpoint">Endpoint เป้าหมาย</label>
+              <select class="field__input" id="api-endpoint" data-testid="api-endpoint"></select>
+            </div>
+            <div class="field-row">
+              <div class="field">
+                <label class="field__label" for="api-reqs">จำนวนคำขอ</label>
+                <input class="field__input" id="api-reqs" type="text" inputmode="numeric" value="100" aria-describedby="api-reqs-error" data-testid="api-reqs">
+                <p class="field__error" id="api-reqs-error" hidden></p>
+              </div>
+              <div class="field">
+                <label class="field__label" for="api-conc">ส่งพร้อมกัน</label>
+                <input class="field__input" id="api-conc" type="text" inputmode="numeric" value="10" aria-describedby="api-conc-error" data-testid="api-conc">
+                <p class="field__error" id="api-conc-error" hidden></p>
+              </div>
+            </div>
+            <button class="btn btn--primary" id="api-run" type="button" data-testid="api-run">เริ่มทดสอบ</button>
+            <div class="progress" id="api-progress" role="progressbar" aria-label="ความคืบหน้าการทดสอบ" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden></div>
+            <p class="field__error" id="api-error" role="alert" hidden></p>
+          </div>
+          <div class="tool-split__main">
+            <dl class="stats">
+              <div><dt>เฉลี่ย</dt><dd data-testid="api-stat-avg">—</dd></div>
+              <div><dt>มัธยฐาน</dt><dd data-testid="api-stat-median">—</dd></div>
+              <div><dt>p95</dt><dd data-testid="api-stat-p95">—</dd></div>
+              <div><dt>อัตราผิดพลาด</dt><dd data-testid="api-stat-err">—</dd></div>
+              <div><dt>สำเร็จ</dt><dd data-testid="api-stat-ok">—</dd></div>
+              <div><dt>สูงสุด</dt><dd data-testid="api-stat-max">—</dd></div>
+              <div><dt>req/วินาที</dt><dd data-testid="api-stat-rps">—</dd></div>
+              <div><dt>Server-Timing เฉลี่ย</dt><dd data-testid="api-stat-server">—</dd></div>
+            </dl>
+            <p class="stats__errors" id="api-errors" hidden></p>
+            <div id="api-chart" hidden>
+              <p class="histogram__label">การกระจายเวลาตอบสนอง (มิลลิวินาที)</p>
+              <div class="histogram" id="api-histogram" role="img" data-testid="api-histogram"></div>
+              <div class="histogram__axis" id="api-axis" aria-hidden="true"></div>
+              <table class="sr-only">
+                <thead><tr><th scope="col">ช่วง (มิลลิวินาที)</th><th scope="col">จำนวนคำขอ</th></tr></thead>
+                <tbody id="api-hist-rows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   </main>
 </div>
 <script type="module" src="/static/js/test.js"></script>

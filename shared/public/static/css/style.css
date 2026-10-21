@@ -311,7 +311,8 @@ svg { flex: none; }
 .tool-grid { display: flex; flex-direction: column; gap: 16px; }
 .tool-card { padding: 20px; border-radius: var(--r-card); background: var(--surface); }
 .tool-card[aria-busy="true"] { cursor: progress; }
-.tool-card__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tool-card__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.tool-card__tools { display: flex; flex-wrap: wrap; gap: 8px; }
 .tool-card h2 { font-size: 16px; font-weight: 600; }
 .tool-card .field { margin-top: 16px; }
 .tool-card .field-row { margin-top: 16px; }
@@ -382,6 +383,7 @@ svg { flex: none; }
 .stats__errors { margin-top: 12px; font-size: 14px; color: var(--ink-2); }
 @media (min-width: 900px) {
   .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .stats--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .stats dd { font-size: 24px; }
 }
 
