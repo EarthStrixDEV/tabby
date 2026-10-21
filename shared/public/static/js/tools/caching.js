@@ -114,6 +114,22 @@ async function step(emit, key, fn) {
   }
 }
 
+const TEMP_NAME = 'ตรวจแคช';
+
+// Id of the temp row: from the 201 body, else the newest row if it is ours (so an unreadable body never leaks the row).
+async function createdId(created, call) {
+  try {
+    const { id } = await created.json();
+    if (id != null) return id;
+  } catch {
+    /* fall through to the lookup */
+  }
+  const res = await call('/api/debts?page=1&per_page=1', { method: 'GET' });
+  const newest = res.ok ? (await res.json()).data?.[0] : null;
+  if (newest && newest.friend_name === TEMP_NAME) return newest.id;
+  throw new Error('temp row id unknown');
+}
+
 // Spec §7 check 6: MISS → HIT → (write a row) → MISS. The temporary row is always deleted again.
 async function appCache(fetchImpl, token) {
   if (!token) return row('app-cache', 'fail', TOKEN_MESSAGE);
@@ -135,14 +151,15 @@ async function appCache(fetchImpl, token) {
   const created = await call('/api/debts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ friend_name: 'ตรวจแคช', amount: '1.00' }),
+    body: JSON.stringify({ friend_name: TEMP_NAME, amount: '1.00' }),
   });
   if (created.status !== 201) return row('app-cache', 'fail', `ได้ ${created.status}`);
-  const { id } = await created.json();
+  let id = null;
   try {
+    id = await createdId(created, call);
     await summary();
   } finally {
-    await call(`/api/debts/${id}`, { method: 'DELETE' }).catch(() => {});
+    if (id != null) await call(`/api/debts/${id}`, { method: 'DELETE' }).catch(() => {});
   }
   const ok = seen.join(' ') === 'MISS HIT MISS';
   return row('app-cache', ok ? 'pass' : 'fail', seen.join(' → '));

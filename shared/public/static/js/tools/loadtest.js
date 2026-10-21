@@ -1,5 +1,6 @@
 // API load test (Spec §8): N requests with at most C in flight, timed on the client.
 
+import { needsToken } from '../lib/api.js';
 import { summarize, histogram } from '../lib/stats.js';
 
 export const ENDPOINTS = ['/api/ping', '/api/ping?db=1', '/api/debts?page=1', '/api/summary', '/api/slow?ms=200', '/api/limited'];
@@ -35,7 +36,8 @@ export function serverTimingMs(header) {
  * so the caller can re-bucket when the bar count changes. Status 0 = network error.
  */
 export async function runLoad({ path, reqs, conc, token = '', onProgress = () => {}, bins = 10, fetchImpl = (...a) => globalThis.fetch(...a) }) {
-  const headers = token ? { 'X-Test-Token': token } : {};
+  // The token goes only to guarded endpoints (Spec §12), e.g. /api/slow, never to /api/ping.
+  const headers = token && needsToken('GET', path) ? { 'X-Test-Token': token } : {};
   const samples = [];
   let started = 0;
 

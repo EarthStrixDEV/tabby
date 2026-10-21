@@ -1,6 +1,6 @@
 // Bandwidth tests (Spec §6). Times are measured on the client: request start → first chunk (TTFB) → last byte.
 
-import { ApiError } from '../lib/api.js';
+import { ApiError, needsToken } from '../lib/api.js';
 import { mbps, median } from '../lib/stats.js';
 
 export const ROUNDS = 3;
@@ -20,12 +20,12 @@ async function send(url, init) {
   }
 }
 
-const tokenHeaders = (token) => (token ? { 'X-Test-Token': token } : {});
+const tokenHeaders = (token, method, url) => (token && needsToken(method, url) ? { 'X-Test-Token': token } : {});
 
 // One streamed download; onFraction(0..1) follows the bytes received.
 async function downloadOnce(url, token, onFraction) {
   const t0 = performance.now();
-  const res = await send(url, { headers: tokenHeaders(token) });
+  const res = await send(url, { headers: tokenHeaders(token, 'GET', url) });
   if (!res.ok) throw httpError(res.status);
   const expected = Number(res.headers.get('content-length')) || 0;
   const reader = res.body.getReader();
@@ -40,6 +40,7 @@ async function downloadOnce(url, token, onFraction) {
       if (expected) onFraction(Math.min(1, bytes / expected));
     }
   } catch (cause) {
+    reader.cancel().catch(() => {});
     throw new ApiError('network', 0, 'network_error', { cause });
   }
   const totalMs = performance.now() - t0;
@@ -87,7 +88,7 @@ export function runUpload(mb, { token, onProgress = () => {} } = {}) {
     const body = new FormData();
     body.append('file', blob, 'random.bin');
     const t0 = performance.now();
-    const res = await send('/upload', { method: 'POST', headers: tokenHeaders(token), body });
+    const res = await send('/upload', { method: 'POST', headers: tokenHeaders(token, 'POST', '/upload'), body });
     const ttfbMs = performance.now() - t0;
     if (!res.ok) throw httpError(res.status);
     await res.arrayBuffer();

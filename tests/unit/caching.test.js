@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CHECKS, runChecks } from '../../shared/public/static/js/tools/caching.js';
-import { clampInputs } from '../../shared/public/static/js/tools/loadtest.js';
+import { clampInputs, runLoad } from '../../shared/public/static/js/tools/loadtest.js';
 
 const TOKEN = 'tok';
 const ETAG = '"a1b2c3"';
@@ -42,7 +42,9 @@ function stubServer(cfg) {
       case 'GET /api/summary':
         return json(200, {}, { 'X-App-Cache': cfg.summarySeq[summaryCalls++] ?? 'MISS' });
       case 'POST /api/debts':
-        return json(201, { id: 77 });
+        return cfg.createdBody === undefined ? json(201, { id: 77 }) : res(201, { 'Content-Type': 'application/json' }, cfg.createdBody);
+      case 'GET /api/debts':
+        return json(200, { data: [{ id: 77, friend_name: 'ตรวจแคช' }], page: 1, per_page: 1, total: 1 });
       case 'DELETE /api/debts/77':
         return res(204);
       case 'GET /static/js/app.js':
@@ -167,4 +169,25 @@ test('clampInputs caps at 1,000 requests and 50 concurrent', () => {
   });
   assert.deepEqual(clampInputs(100, 10), { reqs: 100, conc: 10, errors: {} });
   assert.deepEqual(clampInputs(1000, 50), { reqs: 1000, conc: 50, errors: {} }, 'the caps themselves are allowed');
+});
+
+test('app-cache still deletes the temp row when the 201 body cannot be parsed', async () => {
+  const { fetchImpl, calls } = stubServer({ ...PASSING, createdBody: 'not json' });
+  const r = byKey(await runChecks({ fetchImpl, token: TOKEN, onRow() {} }));
+  assert.equal(r['app-cache'].result, 'pass');
+  assert.ok(calls.some((c) => c.method === 'DELETE' && c.path === '/api/debts/77'), 'temp row is deleted');
+});
+
+test('runLoad sends X-Test-Token only to guarded endpoints', async () => {
+  const seen = [];
+  const fetchImpl = async (url, init = {}) => {
+    seen.push({ url, token: new Headers(init.headers).get('X-Test-Token') });
+    return res(200, { 'Server-Timing': 'app;dur=1.5' }, '{}');
+  };
+  const ping = await runLoad({ path: '/api/ping', reqs: 3, conc: 2, token: TOKEN, fetchImpl });
+  const slow = await runLoad({ path: '/api/slow?ms=200', reqs: 2, conc: 2, token: TOKEN, fetchImpl });
+  assert.equal(ping.ok, 3);
+  assert.equal(slow.serverAvg, 1.5);
+  assert.deepEqual(seen.filter((c) => c.url === '/api/ping').map((c) => c.token), [null, null, null]);
+  assert.deepEqual(seen.filter((c) => c.url === '/api/slow?ms=200').map((c) => c.token), [TOKEN, TOKEN]);
 });
