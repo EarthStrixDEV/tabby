@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "shared/public/index.html"
+        ],
+        "createdAt": "2026-10-21T04:38:53.183Z",
+        "reason": "design handoff mandates it: DESIGN-tabby.md §2.1 and tokens/tabby.css set --bg #FBF6EF as the app background"
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "shared/public/test.html"
+        ],
+        "createdAt": "2026-10-21T04:38:54.624Z",
+        "reason": "design handoff mandates it: DESIGN-tabby.md §2.1 and tokens/tabby.css set --bg #FBF6EF as the app background"
+      }
+    ]
+  }
+}
