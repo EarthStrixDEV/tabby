@@ -6,7 +6,7 @@ test('GET /cache/static: validators and ~2 KB body', async () => {
   const r = await api('GET', '/cache/static');
   assert.equal(r.status, 200);
   assert.equal(r.headers.get('cache-control'), 'public, max-age=60');
-  assert.match(r.headers.get('etag'), /^"[0-9a-f]+"$/);
+  assert.match(r.headers.get('etag'), /^(W\/)?"[0-9a-f]+(-(gzip|br))?"$/);
   assert.ok(r.headers.get('last-modified'));
   assert.match(r.headers.get('content-type'), /^text\/plain; charset=utf-8/);
   assert.ok(r.text.length >= 1900 && r.text.length <= 2200, `length ${r.text.length}`);
@@ -22,6 +22,14 @@ test('GET /cache/static with matching If-None-Match -> 304, empty body', async (
   }
   const miss = await api('GET', '/cache/static', { headers: { 'If-None-Match': '"other"' } });
   assert.equal(miss.status, 200);
+});
+
+test('GET /cache/static with a "-gzip" suffixed If-None-Match (as echoed after mod_deflate) -> 304', async () => {
+  const first = await api('GET', '/cache/static');
+  const bare = first.headers.get('etag').replace(/^W\//, '').replace(/(-(gzip|br))?"$/, '');
+  const r = await api('GET', '/cache/static', { headers: { 'If-None-Match': `${bare}-gzip"` } });
+  assert.equal(r.status, 304);
+  assert.equal(r.text, '');
 });
 
 test('GET /cache/none: same body, no-store', async () => {

@@ -57,9 +57,7 @@ DocumentRoot "${fwd(join(root, 'dist', 'php', 'public'))}"
 
 # Local-only: mimic a typical host that gzips text responses (never put this in .htaccess).
 AddOutputFilterByType DEFLATE text/plain text/html text/css application/javascript application/json
-# Keep the app's ETag byte-identical (Apache would otherwise append "-gzip"; Spec allows that on real hosts,
-# but the contract suite asserts the app's own strong ETag).
-DeflateAlterETag NoChange
+# Default mod_deflate behavior is kept on purpose: it appends "-gzip" to the ETag, like a typical host.
 `;
 writeFileSync(confPath, conf);
 

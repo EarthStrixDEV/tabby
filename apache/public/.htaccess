@@ -12,5 +12,7 @@ RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]
 
 <IfModule mod_headers.c>
-    Header set X-Robots-Tag "noindex"
+    # "always" also tags non-2xx responses; drop the app's own copy first so the header is not duplicated.
+    Header onsuccess unset X-Robots-Tag
+    Header always set X-Robots-Tag "noindex"
 </IfModule>

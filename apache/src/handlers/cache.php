@@ -12,7 +12,7 @@ function cache_static_body(): string
     return $body;
 }
 
-/** True when any entry of If-None-Match equals the ETag, ignoring a W/ weak prefix. */
+/** True when any entry of If-None-Match equals the ETag, ignoring a W/ weak prefix and a content-coding suffix. */
 function cache_etag_matches(string $etag): bool
 {
     $header = $_SERVER['HTTP_IF_NONE_MATCH'] ?? '';
@@ -21,6 +21,8 @@ function cache_etag_matches(string $etag): bool
         if (str_starts_with($candidate, 'W/')) {
             $candidate = substr($candidate, 2);
         }
+        // mod_deflate and similar rewrite the ETag to "<tag>-gzip"; browsers echo that back.
+        $candidate = preg_replace('/-(gzip|br|deflate|zstd)"$/', '"', $candidate);
         if ($candidate === '*' || $candidate === $etag) {
             return true;
         }
