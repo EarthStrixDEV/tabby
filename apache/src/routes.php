@@ -6,6 +6,7 @@ require __DIR__ . '/DebtRepo.php';
 require __DIR__ . '/handlers/ping.php';
 require __DIR__ . '/handlers/debts.php';
 require __DIR__ . '/handlers/summary.php';
+require __DIR__ . '/handlers/cache.php';
 
 Router::add('GET', '/api/ping', 'handle_ping');
 Router::add('GET', '/api/debts', 'handle_debts_list');
@@ -16,3 +17,7 @@ Router::add('DELETE', '/api/debts/{id}', 'handle_debts_delete');
 Router::add('GET', '/api/summary', 'handle_summary');
 Router::add('GET', '/api/cache-stats', 'handle_cache_stats');
 Router::add('DELETE', '/api/cache', 'handle_cache_clear');
+Router::add('GET', '/cache/static', 'handle_cache_static');
+Router::add('GET', '/cache/none', 'handle_cache_none');
+Router::add('GET', '/cache/time', 'handle_cache_time');
+Router::add('GET', '/cache/gzip', 'handle_cache_gzip');
