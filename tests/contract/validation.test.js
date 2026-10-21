@@ -81,6 +81,30 @@ for (const [label, body] of [['truncated JSON', '{"a":'], ['JSON array [1]', '[1
   });
 }
 
+test('JSON number 1.001 keeps full precision -> 422 ทศนิยมไม่เกิน 2 ตำแหน่ง', async () => {
+  const r = await api('POST', '/api/debts', { body: '{"friend_name":"a","amount":1.001}', headers: { 'Content-Type': 'application/json' } });
+  assert.equal(r.status, 422, r.text);
+  assert.equal(r.json.fields.amount, 'ทศนิยมไม่เกิน 2 ตำแหน่ง');
+});
+
+test('JSON number 1.00000000000001 is not rounded away by float->string precision -> 422', async () => {
+  const r = await api('POST', '/api/debts', { body: '{"friend_name":"a","amount":1.00000000000001}', headers: { 'Content-Type': 'application/json' } });
+  assert.equal(r.status, 422, r.text);
+  assert.equal(r.json.fields.amount, 'ทศนิยมไม่เกิน 2 ตำแหน่ง');
+});
+
+test('JSON number 1e999 (infinite float) -> 422 ต้องเป็นตัวเลข', async () => {
+  const r = await api('POST', '/api/debts', { body: '{"friend_name":"a","amount":1e999}', headers: { 'Content-Type': 'application/json' } });
+  assert.equal(r.status, 422, r.text);
+  assert.equal(r.json.fields.amount, 'ต้องเป็นตัวเลข');
+});
+
+test('object with numeric key {"0":1} is an object -> 422, not 400', async () => {
+  const r = await api('POST', '/api/debts', { body: '{"0":1}', headers: { 'Content-Type': 'application/json' } });
+  assert.equal(r.status, 422, r.text);
+  assert.equal(r.json.error, 'validation_failed');
+});
+
 test('{} is a valid object but fails validation -> 422', async () => {
   const r = await api('POST', '/api/debts', { json: {} });
   assert.equal(r.status, 422);

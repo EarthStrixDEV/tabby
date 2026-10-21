@@ -47,7 +47,7 @@ final class Http
         $raw = file_get_contents('php://input');
         $data = json_decode($raw === false ? '' : $raw, true);
         // `[]` decodes to the same empty array as `{}`, so the first non-space byte must be `{`.
-        if (!is_array($data) || !str_starts_with(ltrim((string) $raw), '{') || ($data !== [] && array_is_list($data))) {
+        if (!is_array($data) || !str_starts_with(ltrim((string) $raw), '{')) {
             throw new HttpError(400, 'invalid_json');
         }
         return $data;

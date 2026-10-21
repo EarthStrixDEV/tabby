@@ -65,8 +65,12 @@ function validate_amount(mixed $raw): array
     if (is_int($raw)) {
         $s = (string) $raw;
     } elseif (is_float($raw)) {
-        ini_set('serialize_precision', '-1');
-        $s = (string) $raw;
+        // json_encode emits the shortest round-trip form (1.001, not 1.0009999999999999); INF yields false.
+        $encoded = json_encode($raw);
+        if ($encoded === false) {
+            return [null, 'ต้องเป็นตัวเลข'];
+        }
+        $s = $encoded;
     } elseif (is_string($raw)) {
         $s = trim($raw);
     } else {

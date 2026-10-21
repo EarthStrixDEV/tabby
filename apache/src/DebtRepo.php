@@ -95,6 +95,27 @@ final class DebtRepo
         return $stmt->rowCount() > 0;
     }
 
+    /** @return array{total_unpaid: string, count_unpaid: int, count_paid: int, count_all: int, count_friends_unpaid: int, generated_at: string} */
+    public static function summary(): array
+    {
+        $row = Db::pdo()->query(
+            'SELECT CAST(COALESCE(SUM(CASE WHEN is_paid = 0 THEN amount END), 0) AS DECIMAL(12,2)) AS total_unpaid,
+                    COUNT(CASE WHEN is_paid = 0 THEN 1 END) AS count_unpaid,
+                    COUNT(CASE WHEN is_paid = 1 THEN 1 END) AS count_paid,
+                    COUNT(*) AS count_all,
+                    COUNT(DISTINCT CASE WHEN is_paid = 0 THEN friend_name END) AS count_friends_unpaid
+             FROM debts'
+        )->fetch();
+        return [
+            'total_unpaid' => (string) $row['total_unpaid'],
+            'count_unpaid' => (int) $row['count_unpaid'],
+            'count_paid' => (int) $row['count_paid'],
+            'count_all' => (int) $row['count_all'],
+            'count_friends_unpaid' => (int) $row['count_friends_unpaid'],
+            'generated_at' => gmdate('Y-m-d\TH:i:s\Z'),
+        ];
+    }
+
     private static function iso(string $datetime): string
     {
         return str_replace(' ', 'T', $datetime) . 'Z';
