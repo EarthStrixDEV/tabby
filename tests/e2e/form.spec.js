@@ -198,3 +198,86 @@ test('desktop: Tab stays inside the modal and saving closes it with a highlight'
   await expect(page.getByTestId('debt-row').first()).toHaveClass(/\bis-highlight\b/);
   await expect(page.getByTestId('toast')).toHaveText('เพิ่มรายการของแพรวแล้ว');
 });
+
+test('mobile: Back after ยกเลิก does not reopen the form', async ({ page, request }) => {
+  await createDebt(request, { friend_name: 'ต้น', amount: '180' });
+  await page.goto('/');
+  await page.getByTestId('fab-add').click();
+  await expect(page.getByTestId('input-friend')).toBeVisible();
+  await page.getByTestId('btn-cancel').click();
+  await expect(page.locator('#view-form')).toBeHidden();
+  await page.goBack();
+  await expect(page.getByTestId('debt-row')).toHaveCount(1);
+  await expect(page).not.toHaveURL(/#\/(new|edit)/);
+  await expect(page.locator('#view-form')).toBeHidden();
+});
+
+test('desktop: Back after closing or saving the modal does not reopen it', async ({ page }) => {
+  await page.setViewportSize(DESKTOP);
+  await page.goto('/');
+  await page.locator('.page-head a[href="#/new"]').click();
+  await page.getByRole('button', { name: 'ปิด' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.locator('.page-head a[href="#/new"]').click();
+  await page.getByTestId('input-friend').fill('ต้น');
+  await page.getByTestId('input-amount').fill('180');
+  await page.getByTestId('btn-save').click();
+  await expect(page.getByTestId('debt-row')).toHaveCount(1);
+  await page.goBack();
+  await expect(page).not.toHaveURL(/#\/(new|edit)/);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('desktop: Back with a dialog stacked over the edit modal closes both and clears inert', async ({ page, request }) => {
+  await page.setViewportSize(DESKTOP);
+  const row = await createDebt(request, { friend_name: 'ต้น', amount: '180' });
+  await page.goto('/');
+  await page.locator(`[data-id="${row.id}"] a[href="#/edit/${row.id}"]`).click();
+  await expect(page.getByTestId('input-friend')).toHaveValue('ต้น');
+  const stacked = await page.evaluate(async () => {
+    const { openDialog } = await import('/static/js/ui/dialog.js');
+    const sheet = document.createElement('div');
+    sheet.setAttribute('data-testid', 'stacked');
+    const btn = document.createElement('button');
+    btn.textContent = 'ยกเลิก';
+    sheet.appendChild(btn);
+    openDialog(sheet, { kind: 'sheet', initialFocus: btn });
+    const layers = [...document.querySelectorAll('.dialog-layer')];
+    return { app: document.querySelector('.app').inert, layers: layers.map((l) => l.inert) };
+  });
+  expect(stacked).toEqual({ app: true, layers: [true, false] });
+
+  await page.goBack(); // the route closes only the lower (form) dialog
+  await expect(page.locator('.dialog-layer')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await page.evaluate(() => document.querySelector('.app').inert)).toBe(false);
+  await page.getByTestId('filter-all').click(); // the page is usable again
+  await expect(page.getByTestId('filter-all')).toBeFocused();
+});
+
+test('deep link that fails with a server error returns to the list with an error toast', async ({ page }) => {
+  await page.route('**/api/debts/4242', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'server_error' }) }));
+  await page.goto('/#/edit/4242');
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(page.getByTestId('toast')).toHaveText('ทำรายการไม่สำเร็จ ลองอีกครั้ง');
+  await expect(page.locator('#view-form')).toBeHidden();
+});
+
+test('a 422 with no field the form can show falls back to the error toast', async ({ page }) => {
+  await page.route('**/api/debts', (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    return route.fulfill({
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'validation_failed', fields: { is_paid: 'ต้องเป็น 0 หรือ 1' } }),
+    });
+  });
+  await page.goto('/#/new');
+  await page.getByTestId('input-friend').fill('ต้น');
+  await page.getByTestId('input-amount').fill('150');
+  await page.getByTestId('btn-save').click();
+  await expect(page.getByTestId('toast')).toHaveText('ทำรายการไม่สำเร็จ ลองอีกครั้ง');
+  await expect(page.getByTestId('btn-save')).toBeEnabled();
+  await expect(page).toHaveURL(/#\/new$/);
+});

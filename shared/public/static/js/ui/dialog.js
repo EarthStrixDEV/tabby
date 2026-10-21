@@ -63,6 +63,9 @@ export function openDialog(el, { kind, initialFocus, onClose } = {}) {
     el,
     close() {
       if (closed) return;
+      // Closing a lower layer closes the ones above it first, top-down, so each one gives back
+      // its own inert set and focus in order (e.g. browser Back under a stacked delete confirm).
+      while (stack.at(-1) !== entry) stack.at(-1).close();
       closed = true;
       stack.splice(stack.indexOf(entry), 1);
       layer.remove();

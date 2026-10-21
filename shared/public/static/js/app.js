@@ -4,7 +4,7 @@ import { createApi } from './lib/api.js';
 import { lastPage } from './lib/pager.js';
 import { h, svgIcon } from './ui/dom.js';
 import { openDialog } from './ui/dialog.js';
-import { renderForm } from './ui/form.js';
+import { renderForm, hasFieldErrors } from './ui/form.js';
 import {
   PER_PAGE, fillMobileSummary, fillDesktopSummary, renderFilter, renderList, renderListSkeleton,
   renderTable, renderTableSkeleton, renderEmpty, renderFilterEmpty, renderError, fillPager,
@@ -324,12 +324,14 @@ async function saveForm(opts, payload, session) {
       loadSummary();
       return;
     }
-    if (err.kind !== 'validation') showToast({ text: saveErrorText(err) });
+    // A 422 the form cannot show under a field still needs feedback.
+    if (err.kind !== 'validation' || !hasFieldErrors(err.fields)) showToast({ text: saveErrorText(err) });
     throw err; // the form maps a 422 under its fields
   }
 
-  if (session.desktop) session.close(); // its onClose sets '#/'
-  else location.hash = '#/';
+  // replace, not push: browser Back must never reopen the form that was just saved.
+  if (session.desktop) session.close(); // its onClose replaces the hash with '#/'
+  else location.replace('#/');
   if (!editing) {
     state.filter = 'all';
     state.page = 1;
@@ -356,7 +358,8 @@ function openForm(opts, hash, desktop) {
     friendNames: desktop ? [] : recentNames(),
     desktop,
     onSubmit: (payload) => saveForm(opts, payload, session),
-    onCancel: () => session.close(),
+    // Desktop: ×/ยกเลิก close the modal. Mobile: the back and ยกเลิก links leave the view.
+    onCancel: () => (desktop ? session.close() : location.replace('#/')),
     onDelete: () => requestDelete(opts.debt),
   });
   formSession = session;
@@ -367,7 +370,8 @@ function openForm(opts, hash, desktop) {
       initialFocus: el.querySelector('[data-testid="input-friend"]'),
       onClose: () => {
         if (formSession === session) formSession = null;
-        if (!session.routed) location.hash = '#/'; // ×, ยกเลิก, Esc, scrim or a successful save
+        // ×, ยกเลิก, Esc, scrim or a successful save. replace: Back must not reopen the modal.
+        if (!session.routed) location.replace('#/');
       },
     });
     session.close = dialog.close;
@@ -436,11 +440,13 @@ export function route() {
   // Deep link or refresh: the row is not on the loaded page, so fetch it (Review Focus 3).
   api.request('GET', `/api/debts/${id}`).then(({ data }) => {
     if (seq === routeSeq) openForm({ mode: 'edit', debt: data }, hash, isDesktop());
-  }, () => {
+  }, (err) => {
     if (seq !== routeSeq) return;
-    // 404 (or the row cannot be read): no error message, just the refreshed list.
     location.replace('#/');
-    loadList();
+    // 404: the row is gone, so just the refreshed list. Anything else (500, 429, network) also says so.
+    if (err.kind !== 'not_found') showToast({ text: saveErrorText(err) });
+    // On a cold deep link the boot load is still in flight; only reload an already loaded list.
+    if (!state.loading) loadList();
   });
 }
 

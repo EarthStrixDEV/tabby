@@ -7,6 +7,11 @@ import { addBaht, parseAmountInput } from '../lib/money.js';
 const AMOUNT_CHIPS = [50, 100, 500, 1000];
 const FIELD_ORDER = ['friend_name', 'amount', 'note'];
 
+const hasMessage = (errors, key) => typeof errors?.[key] === 'string' && errors[key] !== '';
+
+/** True when a 422 `fields` object holds a message this form can show under one of its inputs. */
+export const hasFieldErrors = (fields) => FIELD_ORDER.some((key) => hasMessage(fields, key));
+
 const MSG_NAME = 'กรอกชื่อเพื่อน';
 const MSG_AMOUNT = 'กรอกจำนวนเงินเป็นตัวเลข เช่น 150';
 
@@ -100,7 +105,7 @@ export function renderForm({ mode, debt, friendNames = [], desktop, onSubmit, on
   function showErrors(errors) {
     let first = null;
     for (const key of FIELD_ORDER) {
-      if (typeof errors[key] === 'string' && errors[key] !== '') {
+      if (hasMessage(errors, key)) {
         setError(fields[key], errors[key]);
         first ??= fields[key].input;
       } else {
@@ -144,7 +149,7 @@ export function renderForm({ mode, debt, friendNames = [], desktop, onSubmit, on
         is_paid: editing ? debt.is_paid : 0,
       });
     } catch (err) {
-      if (err && err.kind === 'validation') showErrors(err.fields ?? {});
+      if (err && err.kind === 'validation' && hasFieldErrors(err.fields)) showErrors(err.fields);
     } finally {
       if (form.isConnected) setBusy(false);
     }
@@ -166,15 +171,21 @@ export function renderForm({ mode, debt, friendNames = [], desktop, onSubmit, on
     return form;
   }
 
+  // The links keep href="#/" (real links), but onCancel leaves without a new history entry.
+  const cancelLink = (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    onCancel();
+  };
   form = h('form', { class: 'form-view', novalidate: true, onSubmit: submit },
     body,
     h('div', { class: 'form-actions' },
       deleteBtn,
       saveBtn,
-      h('a', { class: 'btn btn--text btn--text-muted', href: '#/', 'data-testid': 'btn-cancel' }, 'ยกเลิก')));
+      h('a', { class: 'btn btn--text btn--text-muted', href: '#/', 'data-testid': 'btn-cancel', onClick: cancelLink }, 'ยกเลิก')));
   return h('div', {},
     h('header', { class: 'topbar topbar--sub' },
-      h('a', { class: 'icon-btn', href: '#/', 'aria-label': 'กลับไปรายการหนี้' }, svgIcon('back')),
+      h('a', { class: 'icon-btn', href: '#/', 'aria-label': 'กลับไปรายการหนี้', onClick: cancelLink }, svgIcon('back')),
       h('h1', { class: 'topbar__title', tabindex: -1 }, title)),
     form);
 }
