@@ -192,6 +192,8 @@ svg { flex: none; }
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   background: var(--ink); color: var(--on-dark); font-size: 14px;
 }
+/* The live region stays in the DOM between toasts; empty, it takes no space. */
+.toast:empty { min-height: 0; padding: 0; }
 .toast :focus-visible { outline-color: var(--on-dark); }
 .toast__action {
   flex: none; min-height: 44px; padding: 0 12px; border: 0; background: transparent;
@@ -250,6 +252,9 @@ svg { flex: none; }
 .modal__close svg { width: 20px; height: 20px; }
 .modal__actions { margin-top: 28px; display: flex; gap: 12px; }
 .modal__actions > .btn--primary { flex: 1; }
+.modal__actions + .btn { margin-top: 12px; }
+/* One layer per open dialog; later layers stack above earlier ones (delete confirm over the edit modal). */
+.dialog-layer { position: fixed; inset: 0; z-index: var(--z-scrim); }
 
 /* 4.8 Form field + inline error */
 .field + .field { margin-top: 20px; }
@@ -271,6 +276,9 @@ svg { flex: none; }
 .field-row { display: flex; gap: 12px; }
 .field-row > .field { flex: 1; min-width: 0; margin-top: 0; }
 
+/* Mobile form view: its sub-header sits inside <main>, so it cancels the main gutter. */
+#view-form .topbar--sub { margin-inline: -20px; }
+.form-view { padding-top: 20px; }
 /* Mobile form view action bar; inside .modal the actions use .modal__actions. */
 .form-actions {
   position: sticky; bottom: 0; margin: 20px -20px 0;

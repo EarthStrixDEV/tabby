@@ -1,8 +1,10 @@
-// Tabby list page: state store, data loading, rendering and the hash router.
+// Tabby list page: state store, data loading, rendering, the add/edit form routes and the toast.
 
 import { createApi } from './lib/api.js';
 import { lastPage } from './lib/pager.js';
 import { h, svgIcon } from './ui/dom.js';
+import { openDialog } from './ui/dialog.js';
+import { renderForm } from './ui/form.js';
 import {
   PER_PAGE, fillMobileSummary, fillDesktopSummary, renderFilter, renderList, renderListSkeleton,
   renderTable, renderTableSkeleton, renderEmpty, renderFilterEmpty, renderError, fillPager,
@@ -32,6 +34,7 @@ export function isDesktop() {
 const main = document.getElementById('main');
 const viewList = document.getElementById('view-list');
 const viewForm = document.getElementById('view-form');
+const topbar = document.querySelector('.app > .topbar');
 const mobileSummary = viewList.querySelector('section.summary');
 const desktopSummary = viewList.querySelector('section.summary-cards');
 const listBody = h('div', {});
@@ -133,6 +136,12 @@ function retry() {
 const noop = () => {};
 const rowHandlers = { onToggle: noop, onDelete: noop };
 
+// ---------- TASK 12 SEAM: delete from the edit form ----------
+// "ลบรายการนี้" in the edit form calls this. Task 12 replaces the body with the delete-confirm
+// dialog (openDialog kind 'sheet', stacked over the desktop edit modal). Until then it does nothing.
+export function requestDelete(debt) {}
+// ---------- END TASK 12 SEAM ----------
+
 // ---------- Rendering ----------
 
 /** True only when the book holds no rows at all; then the filter and FAB are hidden. */
@@ -219,8 +228,169 @@ export function render() {
   restoreFocus(selector, wasInPager);
 }
 
+// ---------- Toast (DESIGN 4.5) ----------
+
+const TOAST_MS = 5000;
+// One persistent live region: replacing its content is what gets announced.
+const toast = h('div', { class: 'toast', role: 'status', 'data-testid': 'toast' });
+document.getElementById('toast-root').appendChild(toast);
+let toastTimer = null;
+let toastRemaining = 0;
+let toastStartedAt = 0;
+let toastHovered = false;
+let toastFocused = false;
+
+function closeToast() {
+  clearTimeout(toastTimer);
+  toastTimer = null;
+  toast.replaceChildren();
+  toastFocused = false;
+}
+
+function resumeToast() {
+  if (toastTimer || toastHovered || toastFocused || !toast.hasChildNodes()) return;
+  toastStartedAt = Date.now();
+  toastTimer = setTimeout(closeToast, toastRemaining);
+}
+
+function pauseToast() {
+  if (!toastTimer) return;
+  clearTimeout(toastTimer);
+  toastTimer = null;
+  toastRemaining = Math.max(0, toastRemaining - (Date.now() - toastStartedAt));
+}
+
+toast.addEventListener('mouseenter', () => { toastHovered = true; pauseToast(); });
+toast.addEventListener('mouseleave', () => { toastHovered = false; resumeToast(); });
+toast.addEventListener('focusin', () => { toastFocused = true; pauseToast(); });
+toast.addEventListener('focusout', (event) => {
+  if (toast.contains(event.relatedTarget)) return;
+  toastFocused = false;
+  resumeToast();
+});
+
+/** A new toast replaces the old one. It closes after 5 s, paused while hovered or focused. */
+export function showToast({ text, actionLabel, onAction }) {
+  clearTimeout(toastTimer);
+  toastTimer = null;
+  const parts = [h('span', {}, text)];
+  if (actionLabel) {
+    parts.push(h('button', {
+      type: 'button', class: 'toast__action', 'data-testid': 'toast-undo',
+      onClick: () => { closeToast(); onAction?.(); },
+    }, actionLabel));
+  }
+  toast.replaceChildren(...parts);
+  toastFocused = toast.contains(document.activeElement);
+  toastRemaining = TOAST_MS;
+  resumeToast();
+}
+
+// ---------- Add/edit form (mobile view, desktop modal) ----------
+
+const HIGHLIGHT_MS = 1500;
+let highlightTimer = null;
+let formSession = null; // { hash, desktop, routed, close() } of the open form
+let routeSeq = 0;
+
+/** Up to 4 unique friend names from the loaded rows, most recent first (DESIGN 4.9). */
+function recentNames() {
+  const names = [];
+  for (const row of state.rows) {
+    if (!names.includes(row.friend_name)) names.push(row.friend_name);
+    if (names.length === 4) break;
+  }
+  return names;
+}
+
+function saveErrorText(err) {
+  if (err.kind === 'rate_limited' && Number.isFinite(err.retryAfter)) return `ส่งคำขอถี่เกินไป รอ ${err.retryAfter} วินาที`;
+  return 'ทำรายการไม่สำเร็จ ลองอีกครั้ง';
+}
+
+async function saveForm(opts, payload, session) {
+  const editing = opts.mode === 'edit';
+  let row;
+  try {
+    const res = editing
+      ? await api.request('PUT', `/api/debts/${opts.debt.id}`, { json: payload })
+      : await api.request('POST', '/api/debts', { json: payload });
+    row = res.data;
+  } catch (err) {
+    if (editing && err.kind === 'not_found') {
+      // Deleted elsewhere meanwhile: back to the refreshed list, like a stale deep link.
+      location.replace('#/');
+      loadList();
+      loadSummary();
+      return;
+    }
+    if (err.kind !== 'validation') showToast({ text: saveErrorText(err) });
+    throw err; // the form maps a 422 under its fields
+  }
+
+  if (session.desktop) session.close(); // its onClose sets '#/'
+  else location.hash = '#/';
+  if (!editing) {
+    state.filter = 'all';
+    state.page = 1;
+    writeQuery();
+    showToast({ text: `เพิ่มรายการของ${row.friend_name}แล้ว` });
+  }
+  state.highlightId = row.id;
+  clearTimeout(highlightTimer);
+  await Promise.all([loadList(), loadSummary()]);
+  if (!editing) window.scrollTo(0, 0);
+  // The table re-rendered, so the edit link that opened the modal is a new node: focus that one.
+  if (editing && session.desktop) listBody.querySelector(`[data-id="${row.id}"] a[href="#/edit/${row.id}"]`)?.focus();
+  highlightTimer = setTimeout(() => {
+    if (state.highlightId !== row.id) return;
+    state.highlightId = null;
+    render();
+  }, HIGHLIGHT_MS);
+}
+
+function openForm(opts, hash, desktop) {
+  const session = { hash, desktop, routed: false, close: noop };
+  const el = renderForm({
+    ...opts,
+    friendNames: desktop ? [] : recentNames(),
+    desktop,
+    onSubmit: (payload) => saveForm(opts, payload, session),
+    onCancel: () => session.close(),
+    onDelete: () => requestDelete(opts.debt),
+  });
+  formSession = session;
+  if (desktop) {
+    showView('list');
+    const dialog = openDialog(el, {
+      kind: 'modal',
+      initialFocus: el.querySelector('[data-testid="input-friend"]'),
+      onClose: () => {
+        if (formSession === session) formSession = null;
+        if (!session.routed) location.hash = '#/'; // ×, ยกเลิก, Esc, scrim or a successful save
+      },
+    });
+    session.close = dialog.close;
+  } else {
+    const replacing = currentView === 'form';
+    viewForm.replaceChildren(el);
+    session.close = () => viewForm.replaceChildren();
+    showView('form', replacing);
+  }
+}
+
+/** Closes the open form because the route changed (no extra hash change). */
+function closeForm() {
+  const session = formSession;
+  formSession = null;
+  if (!session) return;
+  session.routed = true;
+  session.close();
+}
+
 // ---------- Router ----------
 
+const FORM_ROUTE = /^#\/(?:new|edit\/(\d+))$/;
 let currentView = null;
 
 function viewHeading(view) {
@@ -228,28 +398,59 @@ function viewHeading(view) {
   return viewForm.querySelector('h1');
 }
 
-function showView(view) {
+function showView(view, refocus = false) {
   viewList.hidden = view !== 'list';
   viewForm.hidden = view !== 'form';
-  if (currentView !== null && currentView !== view) viewHeading(view)?.focus();
+  topbar.hidden = view === 'form'; // the mobile form view brings its own back-link header
+  if ((currentView !== null && currentView !== view) || refocus) viewHeading(view)?.focus();
   currentView = view;
 }
 
-/** '#/', '' and anything unknown show the list; '#/new' and '#/edit/{id}' are the form (Task 11). */
+/**
+ * '#/', '' and anything unknown show the list. '#/new' and '#/edit/{id}' open the form:
+ * a full view on mobile, a modal over the list on desktop.
+ */
 export function route() {
   const hash = location.hash;
-  if (hash === '#/new' || /^#\/edit\/\d+$/.test(hash)) {
-    // Task 11 opens the add/edit form here. Until then the list stays visible.
+  const match = FORM_ROUTE.exec(hash);
+  if (!match) {
+    routeSeq++; // drops a pending edit fetch
+    closeForm();
     showView('list');
     return;
   }
-  showView('list');
+  const desktop = isDesktop();
+  if (formSession && formSession.hash === hash && formSession.desktop === desktop) return;
+  const seq = ++routeSeq;
+  closeForm();
+  if (!match[1]) {
+    openForm({ mode: 'new' }, hash, desktop);
+    return;
+  }
+  const id = Number(match[1]);
+  const loaded = state.rows.find((row) => row.id === id);
+  if (loaded) {
+    openForm({ mode: 'edit', debt: loaded }, hash, desktop);
+    return;
+  }
+  // Deep link or refresh: the row is not on the loaded page, so fetch it (Review Focus 3).
+  api.request('GET', `/api/debts/${id}`).then(({ data }) => {
+    if (seq === routeSeq) openForm({ mode: 'edit', debt: data }, hash, isDesktop());
+  }, () => {
+    if (seq !== routeSeq) return;
+    // 404 (or the row cannot be read): no error message, just the refreshed list.
+    location.replace('#/');
+    loadList();
+  });
 }
 
 // ---------- Boot ----------
 
 readQuery();
-desktopQuery.addEventListener('change', render);
+desktopQuery.addEventListener('change', () => {
+  render();
+  if (formSession) route(); // moves the open form between the mobile view and the desktop modal
+});
 window.addEventListener('hashchange', route);
 route();
 loadList();
