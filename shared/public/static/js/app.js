@@ -104,6 +104,12 @@ export async function loadList({ silent = false } = {}) {
     if (state.filter === 'all' && data.total === 0 && state.summary?.count_all > 0) loadSummary();
   } catch (err) {
     if (seq !== listSeq) return;
+    if (silent) {
+      // A background refresh failed: keep the rows on screen and say so in a toast.
+      showToast({ text: saveErrorText(err), actionLabel: 'ลองใหม่', onAction: () => loadList({ silent: true }) });
+      render();
+      return;
+    }
     state.error = err;
     state.rows = [];
   }
@@ -151,8 +157,7 @@ const noop = () => {};
 
 /** After a toggle, undo or delete: the server owns the totals, and a filtered page may change. */
 function refreshAfterChange() {
-  loadSummary();
-  if (state.filter !== 'all') loadList({ silent: true });
+  return Promise.all([loadSummary(), state.filter !== 'all' && loadList({ silent: true })]);
 }
 
 function replaceRow(row) {
@@ -163,15 +168,18 @@ function replaceRow(row) {
 /**
  * PUT `row` with is_paid = isPaid (Update replaces the whole row). The row on screen flips at once
  * and its button is busy; on failure it is put back as it was. Resolves to the saved row.
+ * { fresh: true } (undo and retries, which run later) first GETs the row, so a full-replacement PUT
+ * never writes back a name, amount or note from an older snapshot. A 404 there rejects as not_found.
  */
-async function putPaid(row, isPaid) {
+async function putPaid(row, isPaid, { fresh = false } = {}) {
   const before = state.rows.find((r) => r.id === row.id);
   state.busyIds.add(row.id);
   if (before) replaceRow({ ...before, is_paid: isPaid });
   render();
   try {
+    const base = fresh ? (await api.request('GET', `/api/debts/${row.id}`)).data : row;
     const { data } = await api.request('PUT', `/api/debts/${row.id}`, {
-      json: { friend_name: row.friend_name, amount: row.amount, note: row.note, is_paid: isPaid },
+      json: { friend_name: base.friend_name, amount: base.amount, note: base.note, is_paid: isPaid },
     });
     replaceRow(data);
     return data;
@@ -194,28 +202,42 @@ function paidFailed(err, retry) {
   showToast({ text: saveErrorText(err), actionLabel: 'ลองใหม่', onAction: retry });
 }
 
-/** Undo of one toast: restores is_paid of the row captured in that toast only (Review Focus 4b). */
+const checkBtnSelector = (id) => `[data-id="${id}"] [data-testid="check-btn"]`;
+
+/**
+ * Undo of one toast: restores is_paid of the row captured in that toast only (Review Focus 4b),
+ * on top of the row's current fields. The undo button disappears with the toast, so focus goes to
+ * the row's pay button, or to the list heading when the row is not on this page any more.
+ */
 async function undoToggle(row, wasPaid) {
   if (state.busyIds.has(row.id)) return;
+  pendingFocus = checkBtnSelector(row.id);
   try {
-    await putPaid(row, wasPaid);
+    await putPaid(row, wasPaid, { fresh: true });
+    await refreshAfterChange();
   } catch (err) {
     paidFailed(err, () => undoToggle(row, wasPaid));
-    return;
   }
-  refreshAfterChange();
+  const active = document.activeElement;
+  if (!active || active === document.body) {
+    const btn = viewList.querySelector(checkBtnSelector(row.id));
+    (btn && !btn.disabled ? btn : viewHeading('list'))?.focus();
+  }
 }
 
-/** Mark paid / un-pay (DESIGN 4.4, F2). Only paid gets the undo toast; un-pay just updates. */
-export async function toggleDebt(debt) {
+/**
+ * Mark paid / un-pay (DESIGN 4.4, F2). Only paid gets the undo toast; un-pay just updates.
+ * `fresh` is for the ลองใหม่ retry, which runs later: it re-reads the row before the PUT.
+ */
+export async function toggleDebt(debt, { fresh = false } = {}) {
   if (state.busyIds.has(debt.id)) return;
   const original = state.rows.find((r) => r.id === debt.id) ?? debt;
   const wasPaid = original.is_paid ? 1 : 0;
   let saved;
   try {
-    saved = await putPaid(original, wasPaid ? 0 : 1);
+    saved = await putPaid(original, wasPaid ? 0 : 1, { fresh });
   } catch (err) {
-    paidFailed(err, () => toggleDebt(original));
+    paidFailed(err, () => toggleDebt(original, { fresh: true }));
     return;
   }
   if (!wasPaid) {

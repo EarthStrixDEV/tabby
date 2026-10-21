@@ -54,11 +54,43 @@ test('mobile F2: tapping marks paid at once, toasts with the row amount, undo re
   await expect(unpaidCount(page)).toHaveText('1');
   expect(await isPaidOnServer(request, ton.id)).toBe(1);
 
-  await page.getByTestId('toast-undo').click();
+  await page.getByTestId('toast-undo').focus(); // keyboard path (F2 must be keyboard-complete)
+  await page.keyboard.press('Enter');
   await expect(page.getByTestId('toast')).toHaveText('');
   await expect.poll(() => isPaidOnServer(request, ton.id)).toBe(0);
   await expect(btn).toHaveAttribute('aria-pressed', 'false');
   await expect(unpaidCount(page)).toHaveText('2');
+  await expect(btn).toBeFocused(); // the undo button is gone; focus lands on the row's toggle
+});
+
+test('undo keeps edits made after the toggle and restores only is_paid', async ({ page, request }) => {
+  const row = await createDebt(request, { friend_name: 'ต้น', amount: '180', note: 'ค่าข้าว' });
+  await page.goto('/');
+  await rowOf(page, row.id).getByTestId('check-btn').click();
+  await expect(toastText(page)).toHaveText('ต้น จ่ายแล้ว ฿180');
+  const edit = await request.put(`/api/debts/${row.id}`, {
+    data: { friend_name: 'ต้น', amount: '200', note: 'ค่าข้าวเย็น', is_paid: 1 },
+  });
+  expect(edit.status()).toBe(200);
+  await page.getByTestId('toast-undo').click();
+  await expect.poll(() => isPaidOnServer(request, row.id)).toBe(0);
+  const saved = await (await request.get(`/api/debts/${row.id}`)).json();
+  expect(saved).toMatchObject({ note: 'ค่าข้าวเย็น', amount: '200.00', is_paid: 0 });
+  await expect(rowOf(page, row.id).getByTestId('debt-amount')).toHaveText('฿200');
+});
+
+test('a failed background refresh keeps the rows and shows the error toast', async ({ page, request }) => {
+  await createDebt(request, { friend_name: 'แพรว', amount: '280' });
+  const ton = await createDebt(request, { friend_name: 'ต้น', amount: '180' });
+  await page.goto('/?paid=0');
+  await expect(page.getByTestId('debt-row')).toHaveCount(2);
+  await page.route((url) => url.pathname === '/api/debts', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"server_error"}' }));
+  await rowOf(page, ton.id).getByTestId('check-btn').click();
+  await expect(toastText(page)).toHaveText('ทำรายการไม่สำเร็จ ลองอีกครั้ง');
+  await expect(page.getByTestId('debt-row')).toHaveCount(2);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(await isPaidOnServer(request, ton.id)).toBe(1);
 });
 
 test('un-paying a row shows no toast', async ({ page, request }) => {
@@ -250,6 +282,11 @@ test('desktop F3: the row ลบ opens a centred modal; deleting moves focus to 
   await page.getByTestId('dialog-delete-confirm').click();
   await expect(page.getByTestId('dialog-delete-confirm')).toHaveText('กำลังลบ…');
   await expect(page.getByTestId('dialog-delete-confirm')).toBeDisabled();
+  // No backing out while the DELETE is in flight: ยกเลิก, Esc and the scrim do nothing.
+  await expect(page.getByTestId('dialog-delete-cancel')).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await page.locator('.dialog-layer .scrim').last().click({ position: { x: 5, y: 5 } });
+  await expect(dialog).toBeVisible();
   release();
 
   await expect(dialog).toHaveCount(0);

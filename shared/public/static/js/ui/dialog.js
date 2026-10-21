@@ -16,7 +16,7 @@ function onKeydown(event) {
   if (!top) return;
   if (event.key === 'Escape') {
     event.preventDefault();
-    top.close();
+    if (top.canDismiss?.() !== false) top.close();
   } else if (event.key === 'Tab') {
     const items = focusables(top.el);
     if (items.length === 0) {
@@ -37,10 +37,11 @@ function onKeydown(event) {
 }
 
 /**
- * openDialog(el, { kind: 'sheet'|'modal', initialFocus, onClose }) -> { close() }
- * Click on the scrim or Esc closes it; focus returns to the element that had it when opened.
+ * openDialog(el, { kind: 'sheet'|'modal', initialFocus, onClose, canDismiss }) -> { close() }
+ * Click on the scrim or Esc closes it (unless canDismiss() returns false, e.g. while busy); focus
+ * returns to the element that had it when opened. close() itself always closes.
  */
-export function openDialog(el, { kind, initialFocus, onClose } = {}) {
+export function openDialog(el, { kind, initialFocus, onClose, canDismiss } = {}) {
   const root = document.getElementById('dialog-root');
   const opener = document.activeElement;
 
@@ -61,6 +62,7 @@ export function openDialog(el, { kind, initialFocus, onClose } = {}) {
   let closed = false;
   const entry = {
     el,
+    canDismiss,
     close() {
       if (closed) return;
       // Closing a lower layer closes the ones above it first, top-down, so each one gives back
@@ -76,7 +78,7 @@ export function openDialog(el, { kind, initialFocus, onClose } = {}) {
     },
   };
 
-  scrim.addEventListener('click', () => entry.close());
+  scrim.addEventListener('click', () => { if (canDismiss?.() !== false) entry.close(); });
   if (stack.length === 0) document.addEventListener('keydown', onKeydown);
   stack.push(entry);
   root.appendChild(layer);

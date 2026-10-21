@@ -35,6 +35,7 @@ export function confirmDelete(debt, { desktop, onConfirm } = {}) {
         if (busy) return;
         busy = true;
         confirmed = true;
+        cancelBtn.disabled = true; // the DELETE is on its way: no backing out (Esc/scrim too)
         confirmBtn.disabled = true;
         confirmBtn.setAttribute('aria-busy', 'true');
         confirmBtn.textContent = 'กำลังลบ…';
@@ -44,6 +45,7 @@ export function confirmDelete(debt, { desktop, onConfirm } = {}) {
         } catch {
           confirmed = false;
           busy = false;
+          cancelBtn.disabled = false;
           confirmBtn.disabled = false;
           confirmBtn.removeAttribute('aria-busy');
           confirmBtn.textContent = 'ลบรายการ';
@@ -66,6 +68,7 @@ export function confirmDelete(debt, { desktop, onConfirm } = {}) {
     const dialog = openDialog(el, {
       kind: 'sheet',
       initialFocus: cancelBtn,
+      canDismiss: () => !busy, // a route change still closes it through close()
       onClose: () => {
         if (current === dialog) current = null;
         resolve(confirmed);
