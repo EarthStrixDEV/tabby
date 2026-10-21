@@ -25,16 +25,20 @@ final class Http
 
     public static function json(int $status, ?array $body, array $headers = []): void
     {
+        // Encode before touching status or headers, so an encoding failure leaves nothing half-sent.
+        $encoded = ($body === null || $status === 204)
+            ? null
+            : json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         http_response_code($status);
         foreach ($headers as $name => $value) {
             header($name . ': ' . $value);
         }
         self::commonHeaders();
-        if ($body === null || $status === 204) {
+        if ($encoded === null) {
             return;
         }
         header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        echo $encoded;
     }
 
     /** Decodes the request body as a JSON object (not a list or scalar). */
@@ -42,7 +46,8 @@ final class Http
     {
         $raw = file_get_contents('php://input');
         $data = json_decode($raw === false ? '' : $raw, true);
-        if (!is_array($data) || ($data !== [] && array_is_list($data))) {
+        // `[]` decodes to the same empty array as `{}`, so the first non-space byte must be `{`.
+        if (!is_array($data) || !str_starts_with(ltrim((string) $raw), '{') || ($data !== [] && array_is_list($data))) {
             throw new HttpError(400, 'invalid_json');
         }
         return $data;
