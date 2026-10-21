@@ -9,6 +9,7 @@ require __DIR__ . '/handlers/debts.php';
 require __DIR__ . '/handlers/summary.php';
 require __DIR__ . '/handlers/cache.php';
 require __DIR__ . '/handlers/testapi.php';
+require __DIR__ . '/handlers/bandwidth.php';
 
 Router::add('GET', '/api/ping', 'handle_ping');
 Router::add('GET', '/api/slow', 'handle_slow');
@@ -30,3 +31,5 @@ Router::add('GET', '/cache/static', 'handle_cache_static');
 Router::add('GET', '/cache/none', 'handle_cache_none');
 Router::add('GET', '/cache/time', 'handle_cache_time');
 Router::add('GET', '/cache/gzip', 'handle_cache_gzip');
+Router::add('GET', '/download/{mb}', 'handle_download');
+Router::add('POST', '/upload', 'handle_upload');
