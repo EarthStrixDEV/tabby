@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tabby รายการหนี้</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="app">
+  <nav class="sidebar on-dark" aria-label="เมนูหลัก">
+    <p class="sidebar__brand">Tabby</p>
+    <a class="sidebar__link" href="/" aria-current="page">รายการหนี้</a>
+    <a class="sidebar__link" href="/test">ทดสอบระบบ</a>
+  </nav>
+
+  <header class="topbar">
+    <h1 class="topbar__title" tabindex="-1">Tabby</h1>
+    <a class="icon-btn" href="/test" aria-label="ทดสอบระบบ">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 5.2L10.7 2.6H13.3L13.7 5.2A7 7 0 0 1 15.6 6L17.7 4.4L19.6 6.3L18 8.4A7 7 0 0 1 18.8 10.3L21.4 10.7V13.3L18.8 13.7A7 7 0 0 1 18 15.6L19.6 17.7L17.7 19.6L15.6 18A7 7 0 0 1 13.7 18.8L13.3 21.4H10.7L10.3 18.8A7 7 0 0 1 8.4 18L6.3 19.6L4.4 17.7L6 15.6A7 7 0 0 1 5.2 13.7L2.6 13.3V10.7L5.2 10.3A7 7 0 0 1 6 8.4L4.4 6.3L6.3 4.4L8.4 6A7 7 0 0 1 10.3 5.2Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+    </a>
+  </header>
+
+  <main id="main" class="main" tabindex="-1">
+    <div id="view-list">
+      <div class="page-head desktop-only">
+        <h1 class="page-head__title" tabindex="-1">รายการหนี้</h1>
+        <a class="btn btn--primary btn--icon-lead" href="#/new">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+          เพิ่มรายการ
+        </a>
+      </div>
+      <!-- Summary mount points: app.js fills them. Mobile shows one dark card, desktop shows three cards. -->
+      <section class="summary on-dark mobile-only" aria-label="ยอดค้างรวม"></section>
+      <section class="summary-cards desktop-only" aria-label="สรุป"></section>
+    </div>
+    <div id="view-form" hidden></div>
+  </main>
+</div>
+<div id="dialog-root"></div>
+<div id="toast-root"></div>
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

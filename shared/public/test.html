@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tabby ทดสอบระบบ</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="app">
+  <nav class="sidebar on-dark" aria-label="เมนูหลัก">
+    <p class="sidebar__brand">Tabby</p>
+    <a class="sidebar__link" href="/">รายการหนี้</a>
+    <a class="sidebar__link" href="/test" aria-current="page">ทดสอบระบบ</a>
+  </nav>
+
+  <header class="topbar topbar--sub">
+    <a class="icon-btn" href="/" aria-label="กลับไปรายการหนี้">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+    </a>
+    <h1 class="topbar__title" tabindex="-1">ทดสอบระบบ</h1>
+  </header>
+
+  <main id="main" class="main main--test">
+    <div class="page-head desktop-only">
+      <div>
+        <h1 class="page-head__title" tabindex="-1">ทดสอบระบบ</h1>
+        <p class="page-head__sub">วัดแบนด์วิดท์ แคช และการรับโหลดของโฮสติ้งนี้</p>
+      </div>
+    </div>
+    <!-- test.js renders the token card and the tool cards into a .tool-grid here. -->
+  </main>
+</div>
+<script type="module" src="/static/js/test.js"></script>
+</body>
+</html>
