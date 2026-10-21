@@ -24,7 +24,7 @@ export function needsToken(method, path) {
 
 const KIND_BY_STATUS = { 400: 'bad_request', 403: 'forbidden', 404: 'not_found', 413: 'too_large', 422: 'validation', 429: 'rate_limited' };
 
-function kindFor(status) {
+export function kindFor(status) {
   return KIND_BY_STATUS[status] ?? (status >= 500 ? 'server' : 'bad_request');
 }
 

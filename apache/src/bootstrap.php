@@ -9,6 +9,8 @@ require __DIR__ . '/Guard.php';
 require __DIR__ . '/events.php';
 
 ini_set('display_errors', '0');
+// Keep JSON-encoded floats shortest-roundtrip regardless of the host's php.ini (Validation.php stringifies amounts via json_encode).
+ini_set('serialize_precision', '-1');
 
 set_exception_handler(static function (Throwable $e): void {
     error_log((string) $e);

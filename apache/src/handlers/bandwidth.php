@@ -38,7 +38,9 @@ function handle_download(array $params): void
     while (ob_get_level() > 0) {
         ob_end_clean();
     }
-    set_time_limit(0);
+    if (function_exists('set_time_limit')) {
+        @set_time_limit(0); // may be listed in disable_functions on shared hosts
+    }
 
     Http::commonHeaders();
     header('Content-Type: application/octet-stream');

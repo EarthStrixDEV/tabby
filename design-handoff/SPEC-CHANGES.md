@@ -9,9 +9,9 @@
 ใส่ใน §5 ตรง `/api/summary`
 
 - ชนิด: integer
-- นิยาม: จำนวนชื่อเพื่อนที่ไม่ซ้ำกันของรายการที่ยังไม่จ่าย ใน SQL คือ `COUNT(DISTINCT friend_name) WHERE is_paid = 0`
+- นิยาม: จำนวนชื่อเพื่อนที่ไม่ซ้ำกันของรายการที่ยังไม่จ่าย ใน SQL คือ `COUNT(DISTINCT CASE WHEN is_paid = 0 THEN LOWER(friend_name) COLLATE utf8mb4_bin END)`
 - ตัวอย่าง: เพื่อนชื่อเดียวกันมีหนี้ที่ยังไม่จ่าย 2 แถว นับเป็น 1
-- การเทียบชื่อใช้ collation `utf8mb4_unicode_ci` จึงไม่แยกตัวพิมพ์เล็กใหญ่ (`Ann` กับ `ann` นับเป็นคนเดียวกัน)
+- การเทียบชื่อไม่แยกตัวพิมพ์เล็กใหญ่ (`Ann` กับ `ann` นับเป็นคนเดียวกัน) แต่แยกวรรณยุกต์ไทยและ emoji (`ป้า` กับ `ปา` เป็นคนละคน) โดยใช้ `LOWER(...) COLLATE utf8mb4_bin` เพราะ `utf8mb4_unicode_ci` มองว่า `ป้า`=`ปา`, `กา`=`ก่า` และ emoji ต่างตัวเท่ากัน ทำให้นับเพื่อนต่ำกว่าจริง
 
 ตัวอย่าง response ฉบับเต็ม (`200 OK`, header `X-App-Cache: HIT` หรือ `MISS`):
 
@@ -84,6 +84,6 @@ Response เมื่อไม่ผ่าน: `422` กับ `{"error": "valid
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-เหตุผล: ค่า default ของ MySQL บน shared hosting (SWH) บางแห่งยังเป็น `latin1` ซึ่งทำให้ข้อความภาษาไทยเสียหายเมื่อบันทึก (กลายเป็น `?` หรือ mojibake) การระบุ charset และ collation เองทำให้ผลเหมือนกันทุกเครื่อง และ `utf8mb4_unicode_ci` ให้การเทียบข้อความที่ไม่แยกตัวพิมพ์เล็กใหญ่เหมือนกันทุกที่ (มีผลกับ `count_friends_unpaid` ตามข้อ 1) การเชื่อมต่อฝั่งแอปใช้ `charset=utf8mb4` ตรงกัน
+เหตุผล: ค่า default ของ MySQL บน shared hosting (SWH) บางแห่งยังเป็น `latin1` ซึ่งทำให้ข้อความภาษาไทยเสียหายเมื่อบันทึก (กลายเป็น `?` หรือ mojibake) การระบุ charset และ collation เองทำให้ผลเหมือนกันทุกเครื่อง ส่วน `count_friends_unpaid` (ข้อ 1) ไม่พึ่ง collation ของตาราง แต่เทียบด้วย `LOWER(friend_name) COLLATE utf8mb4_bin` เพื่อให้ไม่แยกตัวพิมพ์เล็กใหญ่ แต่แยกวรรณยุกต์ไทยและ emoji การเชื่อมต่อฝั่งแอปใช้ `charset=utf8mb4` ตรงกัน
 
 นี่เป็นการเบี่ยงจาก Spec §3 เดิมที่ไม่ได้ระบุ option เหล่านี้ (ระบุไว้เป็นคอมเมนต์บรรทัดแรกของ `shared/schema.sql` แล้ว)

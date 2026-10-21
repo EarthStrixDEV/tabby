@@ -10,7 +10,22 @@ export PATH="/c/laragon/bin/php/php-8.5.11-Win32-vs17-x64:/c/laragon/bin/mysql/m
 
 (Or add both directories to the Windows user `PATH` permanently.) Laragon's MySQL must be running (user `root`, empty password, `127.0.0.1`).
 
-Copy `apache/config.sample.php` to `apache/config.php` and fill it in. `config.php` is gitignored; never commit it.
+Copy `apache/config.sample.php` to `apache/config.php` and fill it in. `config.php` is gitignored; never commit it. For the test suites to pass, use exactly these values (`CACHE_DIR` must be an absolute path to this repo's `dist/cache`):
+
+```php
+<?php
+return [
+    'DB_HOST'    => '127.0.0.1',
+    'DB_NAME'    => 'tb_local',
+    'DB_USER'    => 'root',
+    'DB_PASS'    => '',
+    'APP_STACK'  => 'apache',
+    'CACHE_DIR'  => 'D:/path/to/tabby/dist/cache',   // absolute path to <repo>/dist/cache
+    'TEST_TOKEN' => 'local-test-token-0123456789abcdef',
+];
+```
+
+The tests send `TEST_TOKEN` as `X-Test-Token`. You can override it for the test runner with the `TEST_TOKEN` environment variable, but then it must match the value in `config.php`.
 
 ## Database
 
@@ -41,6 +56,8 @@ BASE_URL=http://127.0.0.1:8081 npm run test:contract       # against real Apache
 BASE_URL=http://127.0.0.1:8081 npm run test:e2e            # Playwright
 npm run test:unit
 ```
+
+`tests/contract/testapi.test.js` has local-only assumptions: it expects `client_ip` to be `127.0.0.1` and truncates the `rate_limits` table through the local `mysql` client (`scripts/db-reset.mjs --truncate`). It therefore needs a local database and cannot run against a remote host.
 
 ## Production routing
 

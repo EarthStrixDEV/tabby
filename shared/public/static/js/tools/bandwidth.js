@@ -1,6 +1,6 @@
 // Bandwidth tests (Spec §6). Times are measured on the client: request start → first chunk (TTFB) → last byte.
 
-import { ApiError, needsToken } from '../lib/api.js';
+import { ApiError, kindFor, needsToken } from '../lib/api.js';
 import { mbps, median } from '../lib/stats.js';
 
 export const ROUNDS = 3;
@@ -8,8 +8,7 @@ const MB = 1048576;
 const RANDOM_CHUNK = 65536; // crypto.getRandomValues rejects larger arrays
 
 function httpError(status) {
-  const kind = status === 403 ? 'forbidden' : status === 413 ? 'too_large' : status >= 500 ? 'server' : 'bad_request';
-  return new ApiError(kind, status, `HTTP ${status}`);
+  return new ApiError(kindFor(status), status, `HTTP ${status}`);
 }
 
 async function send(url, init) {

@@ -82,6 +82,15 @@ test('two unpaid rows for the same friend count once in count_friends_unpaid', a
   assert.equal(s.count_unpaid, before.count_unpaid + 2);
 });
 
+test('count_friends_unpaid is case-insensitive but keeps Thai tone marks distinct', async () => {
+  await api('DELETE', '/api/cache', { headers: auth });
+  const before = (await api('GET', '/api/summary')).json;
+  for (const name of ['ป้า', 'ปา', 'Ann', 'ann']) await make({ friend_name: name, amount: '1' });
+  const s = (await api('GET', '/api/summary')).json;
+  // ป้า vs ปา are distinct (+2); Ann and ann collapse (+1) => +3 exactly
+  assert.equal(s.count_friends_unpaid, before.count_friends_unpaid + 3);
+});
+
 test('cache-stats returns {hits, misses} numbers; DELETE /api/cache resets them to 0', async () => {
   await api('DELETE', '/api/cache', { headers: auth });
   const zero = await api('GET', '/api/cache-stats');

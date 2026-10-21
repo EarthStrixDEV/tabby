@@ -103,7 +103,7 @@ final class DebtRepo
                     COUNT(CASE WHEN is_paid = 0 THEN 1 END) AS count_unpaid,
                     COUNT(CASE WHEN is_paid = 1 THEN 1 END) AS count_paid,
                     COUNT(*) AS count_all,
-                    COUNT(DISTINCT CASE WHEN is_paid = 0 THEN friend_name END) AS count_friends_unpaid
+                    COUNT(DISTINCT CASE WHEN is_paid = 0 THEN LOWER(friend_name) COLLATE utf8mb4_bin END) AS count_friends_unpaid
              FROM debts'
         )->fetch();
         return [
