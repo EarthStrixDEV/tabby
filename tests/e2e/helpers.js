@@ -1,10 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BASE_URL, TOKEN } from '../helpers/http.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:8080';
-const TOKEN = process.env.TEST_TOKEN || 'local-test-token-0123456789abcdef';
 
 export const MOBILE = { width: 390, height: 844 };
 export const NARROW = { width: 360, height: 740 };

@@ -13,5 +13,8 @@ export default defineConfig({
     command: 'npm run serve',
     url: 'http://127.0.0.1:8080/api/ping',
     reuseExistingServer: true,
+    // php -S writes its per-request access log to stderr; keep the test output readable.
+    stdout: 'ignore',
+    stderr: 'ignore',
   },
 });
