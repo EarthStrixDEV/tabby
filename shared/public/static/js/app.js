@@ -5,6 +5,8 @@ import { lastPage } from './lib/pager.js';
 import { h, svgIcon } from './ui/dom.js';
 import { openDialog } from './ui/dialog.js';
 import { renderForm, hasFieldErrors } from './ui/form.js';
+import { confirmDelete, closeConfirm } from './ui/confirm.js';
+import { formatBaht } from './lib/money.js';
 import {
   PER_PAGE, fillMobileSummary, fillDesktopSummary, renderFilter, renderList, renderListSkeleton,
   renderTable, renderTableSkeleton, renderEmpty, renderFilterEmpty, renderError, fillPager,
@@ -23,6 +25,7 @@ export const state = {
   loading: true, // list request in flight
   error: null, // ApiError of the last failed list load
   highlightId: null,
+  busyIds: new Set(), // rows whose paid toggle is in flight
 };
 
 export function isDesktop() {
@@ -68,25 +71,37 @@ function writeQuery() {
 let listSeq = 0;
 let summarySeq = 0;
 
-export async function loadList() {
+/**
+ * Loads the current page. { silent: true } keeps the rows on screen instead of the skeleton
+ * (refreshes after a toggle or delete).
+ */
+export async function loadList({ silent = false } = {}) {
   const seq = ++listSeq;
-  state.loading = true;
-  state.error = null;
-  render();
+  if (!silent) {
+    state.loading = true;
+    state.error = null;
+    render();
+  }
   const q = new URLSearchParams({ page: String(state.page), per_page: String(PER_PAGE) });
   if (PAID_PARAM[state.filter]) q.set('paid', PAID_PARAM[state.filter]);
   try {
     const { data } = await api.request('GET', `/api/debts?${q}`);
     if (seq !== listSeq) return; // a newer request superseded this one
-    const last = lastPage(data.total, PER_PAGE);
-    if (data.data.length === 0 && data.total > 0 && state.page > last) {
-      // The page no longer exists (deep link or rows removed): step back to the last one.
-      state.page = last;
+    if (data.data.length === 0 && state.page > 1) {
+      if (data.total > 0) {
+        // The page no longer exists (deep link or rows removed): step back to the last one.
+        state.page = lastPage(data.total, PER_PAGE);
+        writeQuery();
+        return loadList({ silent });
+      }
+      state.page = 1; // nothing at all: page 1 is the only page
       writeQuery();
-      return loadList();
     }
     state.rows = data.data;
     state.total = data.total;
+    state.error = null;
+    // The book emptied behind a stale summary: refresh it so the counts and cards agree.
+    if (state.filter === 'all' && data.total === 0 && state.summary?.count_all > 0) loadSummary();
   } catch (err) {
     if (seq !== listSeq) return;
     state.error = err;
@@ -132,22 +147,139 @@ function retry() {
   if (state.summaryError) loadSummary();
 }
 
-// Task 12 supplies the real toggle (optimistic PUT + toast) and delete (confirm dialog).
 const noop = () => {};
-const rowHandlers = { onToggle: noop, onDelete: noop };
 
-// ---------- TASK 12 SEAM: delete from the edit form ----------
-// "ลบรายการนี้" in the edit form calls this. Task 12 replaces the body with the delete-confirm
-// dialog (openDialog kind 'sheet', stacked over the desktop edit modal). Until then it does nothing.
-export function requestDelete(debt) {}
-// ---------- END TASK 12 SEAM ----------
+/** After a toggle, undo or delete: the server owns the totals, and a filtered page may change. */
+function refreshAfterChange() {
+  loadSummary();
+  if (state.filter !== 'all') loadList({ silent: true });
+}
+
+function replaceRow(row) {
+  const i = state.rows.findIndex((r) => r.id === row.id);
+  if (i !== -1) state.rows[i] = row;
+}
+
+/**
+ * PUT `row` with is_paid = isPaid (Update replaces the whole row). The row on screen flips at once
+ * and its button is busy; on failure it is put back as it was. Resolves to the saved row.
+ */
+async function putPaid(row, isPaid) {
+  const before = state.rows.find((r) => r.id === row.id);
+  state.busyIds.add(row.id);
+  if (before) replaceRow({ ...before, is_paid: isPaid });
+  render();
+  try {
+    const { data } = await api.request('PUT', `/api/debts/${row.id}`, {
+      json: { friend_name: row.friend_name, amount: row.amount, note: row.note, is_paid: isPaid },
+    });
+    replaceRow(data);
+    return data;
+  } catch (err) {
+    if (before) replaceRow(before);
+    throw err;
+  } finally {
+    state.busyIds.delete(row.id);
+    render();
+  }
+}
+
+/** A failed toggle or undo: 404 means the row is gone (refresh quietly), anything else offers a retry. */
+function paidFailed(err, retry) {
+  if (err.kind === 'not_found') {
+    loadList({ silent: true });
+    loadSummary();
+    return;
+  }
+  showToast({ text: saveErrorText(err), actionLabel: 'ลองใหม่', onAction: retry });
+}
+
+/** Undo of one toast: restores is_paid of the row captured in that toast only (Review Focus 4b). */
+async function undoToggle(row, wasPaid) {
+  if (state.busyIds.has(row.id)) return;
+  try {
+    await putPaid(row, wasPaid);
+  } catch (err) {
+    paidFailed(err, () => undoToggle(row, wasPaid));
+    return;
+  }
+  refreshAfterChange();
+}
+
+/** Mark paid / un-pay (DESIGN 4.4, F2). Only paid gets the undo toast; un-pay just updates. */
+export async function toggleDebt(debt) {
+  if (state.busyIds.has(debt.id)) return;
+  const original = state.rows.find((r) => r.id === debt.id) ?? debt;
+  const wasPaid = original.is_paid ? 1 : 0;
+  let saved;
+  try {
+    saved = await putPaid(original, wasPaid ? 0 : 1);
+  } catch (err) {
+    paidFailed(err, () => toggleDebt(original));
+    return;
+  }
+  if (!wasPaid) {
+    showToast({
+      text: `${saved.friend_name} จ่ายแล้ว ${formatBaht(saved.amount)}`,
+      actionLabel: 'เลิกทำ',
+      onAction: () => undoToggle(saved, wasPaid),
+    });
+  }
+  refreshAfterChange();
+}
+
+/**
+ * DELETE the row (DESIGN 4.7, F3); runs inside the confirm, which shows "กำลังลบ…" meanwhile.
+ * 204 and 404 close every dialog, leave the edit view for '#/', move focus to the list heading
+ * (the row and its buttons are about to go) and reload. Other failures toast and rethrow, so
+ * the confirm stays open.
+ */
+export async function deleteDebt(debt) {
+  const fromEdit = formSession !== null;
+  let gone = false;
+  try {
+    await api.request('DELETE', `/api/debts/${debt.id}`);
+  } catch (err) {
+    if (err.kind !== 'not_found') {
+      showToast({ text: saveErrorText(err) });
+      throw err;
+    }
+    gone = true; // already deleted elsewhere: just refresh
+  }
+  closeConfirm();
+  if (fromEdit) {
+    closeForm();
+    location.replace('#/');
+    showView('list');
+  }
+  viewHeading('list')?.focus();
+  if (state.highlightId === debt.id) state.highlightId = null;
+  loadList({ silent: true }); // steps back a page if this one is now empty
+  loadSummary();
+  if (!gone) showToast({ text: `ลบรายการของ${debt.friend_name}แล้ว` });
+}
+
+/** Opens the delete confirm: from the edit form ("ลบรายการนี้") or the desktop row's "ลบ". */
+export async function requestDelete(debt) {
+  clearTimeout(highlightTimer);
+  state.highlightId = debt.id; // the target row behind the dialog (DESIGN 4.7)
+  render();
+  await confirmDelete(debt, { desktop: isDesktop(), onConfirm: () => deleteDebt(debt) });
+  if (state.highlightId === debt.id) {
+    state.highlightId = null;
+    render();
+  }
+}
+
+const rowHandlers = { onToggle: toggleDebt, onDelete: requestDelete };
 
 // ---------- Rendering ----------
 
 /** True only when the book holds no rows at all; then the filter and FAB are hidden. */
 function isEmptyBook() {
-  if (state.summary) return state.summary.count_all === 0;
-  // Without a summary, fall back to an unfiltered list that came back empty.
+  if (state.summary?.count_all === 0) return true;
+  // An unfiltered list that came back empty is an empty book too, even while a stale summary
+  // (count_all > 0) is being reloaded: "ทั้งหมด" never shows the filter-empty text.
   return !state.loading && !state.error && state.filter === 'all' && state.total === 0;
 }
 
@@ -191,10 +323,14 @@ function restoreFocus(selector, wasInPager) {
   }
 }
 
+// A busy (disabled) toggle cannot hold focus; its selector waits here until the button is enabled.
+let pendingFocus = null;
+
 export function render() {
   const desktop = isDesktop();
   const focused = document.activeElement;
-  const selector = focusSelector(focused);
+  const lostFocus = !focused || focused === document.body;
+  const selector = focusSelector(focused) ?? (lostFocus ? pendingFocus : null);
   const wasInPager = pager.contains(focused);
 
   if (state.loading) main.setAttribute('aria-busy', 'true');
@@ -226,6 +362,8 @@ export function render() {
   }
 
   restoreFocus(selector, wasInPager);
+  const target = selector && viewList.querySelector(selector);
+  pendingFocus = target && target.disabled && document.activeElement !== target ? selector : null;
 }
 
 // ---------- Toast (DESIGN 4.5) ----------
@@ -415,6 +553,7 @@ function showView(view, refocus = false) {
  * a full view on mobile, a modal over the list on desktop.
  */
 export function route() {
+  closeConfirm(); // e.g. Back with the delete sheet open over the mobile form view
   const hash = location.hash;
   const match = FORM_ROUTE.exec(hash);
   if (!match) {

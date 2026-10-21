@@ -19,6 +19,9 @@ const DASH = '—';
 
 const avatar = (name) => h('span', { class: `avatar avatar--${avatarVariant(name)}`, 'aria-hidden': 'true' }, initialOf(name));
 
+// A toggle in flight: aria-busy and disabled until its PUT settles (DESIGN 4.4).
+const busyAttrs = (state, row) => (state.busyIds?.has(row.id) ? { 'aria-busy': 'true', disabled: true } : {});
+
 const toggleLabel = (row) => (row.is_paid ? `ยกเลิกการจ่ายของ ${row.friend_name}` : `ทำเครื่องหมายว่า ${row.friend_name} จ่ายแล้ว`);
 
 // ---------- Summary (DESIGN 4.1) ----------
@@ -85,7 +88,7 @@ function debtRow(row, state, onToggle) {
       h('span', { class: 'debt__amount', 'data-testid': 'debt-amount' }, formatBaht(row.amount))),
     h('button', {
       type: 'button', class: 'check-btn', 'data-testid': 'check-btn',
-      'aria-pressed': String(paid), 'aria-label': toggleLabel(row),
+      'aria-pressed': String(paid), 'aria-label': toggleLabel(row), ...busyAttrs(state, row),
       onClick: () => onToggle(row),
     }, svgIcon('check')));
 }
@@ -146,7 +149,7 @@ function tableRow(row, state, onToggle, onDelete) {
     h('td', { class: 'debts-table__actions' },
       h('button', {
         type: 'button', class: 'btn btn--text btn--text-ok', 'data-testid': 'check-btn',
-        'aria-label': toggleLabel(row), onClick: () => onToggle(row),
+        'aria-label': toggleLabel(row), ...busyAttrs(state, row), onClick: () => onToggle(row),
       }, paid ? 'ยกเลิกจ่าย' : 'จ่ายแล้ว'),
       h('a', { class: 'btn btn--text', href: `#/edit/${row.id}`, 'aria-label': `แก้ไขรายการของ${name}` }, 'แก้ไข'),
       h('button', {
