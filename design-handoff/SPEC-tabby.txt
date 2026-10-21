@@ -1,0 +1,802 @@
+
+
+# Spec: Tabby (SWH Test App)
+2026-10-19 · 
+Spec นี้กำหนดแอป CRUD เล็กๆ ที่เขียนซ้ำ 4 เวอร์ชัน (Apache, Nginx, Node, Python) โดยใช้ฐานข้อมูล, API และหน้าเว็บชุดเดียวกัน เพื่อวัดว่า Shared Web Hosting (SWH) ของ Dimenshade รันแต่ละ stack ได้ถูกต้องและเร็วแค่ไหน
+
+## 1. ภาพรวมและวัตถุประสงค์
+แอปชื่อ "Tabby" (สมุดจดหนี้เพื่อน) ใช้จดว่าเพื่อนคนไหนยืมเงินเท่าไร ตัวแอปตั้งใจให้ง่ายที่สุด เพราะสิ่งที่ต้องทดสอบคือตัว hosting ไม่ใช่ตัวแอป
+เป้าหมาย
+- 
+ตรวจว่า SWH รัน PHP บน Apache, PHP บน Nginx, Node.js และ Python ได้ครบ ทั้งการเชื่อมต่อ DB, สิทธิ์ไฟล์, SSL และ log
+- 
+วัด bandwidth, caching และ API request ด้วย endpoint ชุดเดียวกันในทุก stack เพื่อเทียบกันตรงๆ
+- 
+หาจุดที่ account ถูกจำกัด (CPU, RAM, I/O, bandwidth, จำนวน process) ก่อนเปิดให้ลูกค้าใช้จริง
+- 
+ได้โค้ดชุดเดียวที่อัปโหลดแล้วทดสอบซ้ำได้ทุกครั้งที่ปรับ config
+ไม่อยู่ในขอบเขต
+- 
+ระบบล็อกอินและสิทธิ์หลายระดับ
+- 
+UI สวยงามหรือฟีเจอร์ธุรกิจจริง
+- 
+Stress test ระดับ production ที่กระทบ account อื่นบนเครื่องเดียวกัน
+- 
+การตั้งค่าระดับ server ที่ทำนอกแผงควบคุมของ SWH
+ถือว่าสำเร็จเมื่อ
+- 
+ทั้ง 4 เวอร์ชันผ่าน CRUD ครบ 5 operation (list, read, create, update, delete)
+- 
+ทั้ง 4 เวอร์ชันผ่านทุกข้อที่เป็น "ต้องผ่าน" ในหัวข้อ 11 หรือมีบันทึกสาเหตุที่ไม่ผ่านพร้อมแนวทางแก้ และมีผลครบทุกข้อที่เป็น "บันทึกผล"
+- 
+มีตารางผลเปรียบเทียบ 4 stack หนึ่งตาราง
+
+## 2. สภาพแวดล้อมและสถาปัตยกรรม
+แต่ละ stack รันเป็นเว็บไซต์แยกบน subdomain ของตัวเองภายใน account SWH เดียวกัน ใช้ MySQL database แยกต่อ stack แต่ schema เหมือนกันทุกตัว
+แต่ละ lane คือหนึ่ง stack เวอร์ชัน Apache และ Nginx ใช้โค้ด PHP ชุดเดียวกัน ต่างกันที่ web server ที่อยู่หน้าแอป
+Stack
+Subdomain
+Runtime
+วิธีรัน
+Database
+Apache
+apache.{domain}
+PHP 8.x
+Apache + PHP (mod_php หรือ PHP-FPM ตามที่ SWH ตั้ง)
+tb_apache
+Nginx
+nginx.{domain}
+PHP 8.x (โค้ดชุดเดียวกับ Apache)
+Nginx + PHP-FPM
+tb_nginx
+Node
+node.{domain}
+Node.js LTS + Express
+process ของแอปหลัง reverse proxy
+tb_node
+Python
+python.{domain}
+Python 3.x + Flask
+WSGI (Passenger หรือ gunicorn หลัง proxy)
+tb_python
+หมายเหตุ
+- 
+{domain} คือโดเมนที่ใช้ทดสอบ ยังไม่กำหนด (ดูหัวข้อ 13)
+- 
+ชื่อ database จริงบน DirectAdmin จะมี prefix เป็น username ของ account
+- 
+ต้องยืนยันก่อนว่า SWH node ที่ใช้ทดสอบตั้งโหมดเว็บเซิร์ฟเวอร์เป็นแบบใด: Apache อย่างเดียว, Nginx อย่างเดียว หรือ Nginx เป็น reverse proxy หน้า Apache ถ้าเป็นแบบสุดท้าย ผลของเวอร์ชัน Nginx จะเป็นผลรวมของสองชั้น ต้องจดไว้ในผลทดสอบ
+- 
+Node และ Python ต้องมีวิธีรันแอปบน SWH (Passenger หรือ proxy ไปพอร์ตภายใน) ถ้าทำไม่ได้ ให้บันทึกผลเป็น "ไม่รองรับ" ซึ่งเป็นผลทดสอบที่ถูกต้อง ไม่ใช่ข้อผิดพลาดของโค้ด
+
+## 3. โครงสร้างข้อมูล
+ทุก database ใช้ 2 ตาราง: debts เก็บข้อมูลหลักของแอป และ rate_limits ใช้นับ request สำหรับทดสอบ rate limit (เก็บใน DB เพื่อให้นับถูกแม้แอปรันหลาย process)
+ตาราง debts
+Column
+Type
+Null
+ค่าเริ่มต้น
+หมายเหตุ
+id
+INT UNSIGNED, AUTO_INCREMENT
+ไม่
+-
+Primary key
+friend_name
+VARCHAR(100)
+ไม่
+-
+ชื่อเพื่อน ห้ามว่าง
+amount
+DECIMAL(10,2)
+ไม่
+-
+ต้องมากกว่า 0
+note
+VARCHAR(255)
+ได้
+NULL
+หมายเหตุ
+is_paid
+TINYINT(1)
+ไม่
+0
+0 = ยังไม่จ่าย, 1 = จ่ายแล้ว
+created_at
+DATETIME
+ไม่
+CURRENT_TIMESTAMP
+เวลาสร้าง
+updated_at
+DATETIME
+ไม่
+CURRENT_TIMESTAMP ON UPDATE
+เวลาแก้ล่าสุด
+ตาราง rate_limits
+Column
+Type
+หมายเหตุ
+ip
+VARCHAR(45)
+รองรับ IPv6
+window_start
+DATETIME
+ต้นนาทีของช่วงนับ
+hits
+INT UNSIGNED
+จำนวน request ในช่วงนั้น
+Primary key ของ rate_limits คือ (ip, window_start)
+SQL สร้างตาราง
+```
+
+```
+
+กติกาข้อมูลจำลอง (seed)
+- 
+สร้างได้ครั้งละ 1 ถึง 10,000 แถว
+- 
+ชื่อสุ่มจากรายชื่อ 20 ชื่อ, จำนวนเงินสุ่ม 10 ถึง 5,000 บาท ทีละ 10, ประมาณ 30% ถูกตั้งเป็นจ่ายแล้ว
+- 
+ทุกแถวที่สร้างจาก seed มี note = '[seed]' เพื่อลบทิ้งทีเดียวได้ด้วย DELETE FROM debts WHERE note = '[seed]'
+
+## 4. ฟังก์ชันของแอป (CRUD)
+หน้าเว็บเป็น HTML + JavaScript ล้วน (fetch API) ไฟล์ชุดเดียวกันทั้ง 4 เวอร์ชัน มีเฉพาะฝั่ง backend ที่ต่างกัน จึงเทียบผลได้ว่าความต่างมาจาก stack ไม่ใช่จากหน้าเว็บ
+หน้า
+Path
+หน้าที่
+หน้าหลัก
+/
+ตารางรายการหนี้ แบ่งหน้าละ 20 แถว, กรอง ทั้งหมด / ยังไม่จ่าย / จ่ายแล้ว, ฟอร์มเพิ่ม, ปุ่มแก้, ปุ่มลบ (มีหน้าต่างยืนยัน), ปุ่มสลับจ่ายแล้ว, แถบสรุปยอดค้างรวม
+เครื่องมือทดสอบ
+/test
+ปุ่มทดสอบ bandwidth, caching, API request และแสดงผล (หัวข้อ 6 ถึง 8)
+การทำงานของแต่ละ operation
+Operation
+พฤติกรรม
+List
+ดึงรายการเรียงตาม id จากมากไปน้อย รองรับ page, per_page (ค่าเริ่มต้น 20, สูงสุด 100) และ paid (0 หรือ 1)
+Read
+ดึงหนึ่งแถวตาม id ไม่พบตอบ 404
+Create
+สร้างแถวใหม่ ตอบ 201 พร้อมข้อมูลแถวที่สร้าง
+Update
+แทนที่ฟิลด์ทั้งหมดของแถว (PUT) ปุ่มสลับจ่ายแล้วส่งข้อมูลครบทุกฟิลด์ ไม่พบตอบ 404
+Delete
+ลบถาวร ตอบ 204 ไม่พบตอบ 404
+Update ใช้ PUT และ Delete ใช้ DELETE โดยตั้งใจ เพราะบาง web server ตั้งค่าให้บล็อก method เหล่านี้ จึงเป็นส่วนหนึ่งของการทดสอบ
+กติกาตรวจข้อมูล (ทุก stack ต้องตรงกัน)
+- 
+friend_name: ตัดช่องว่างหัวท้าย ยาว 1 ถึง 100 ตัวอักษร
+- 
+amount: ตัวเลขมากกว่า 0 ไม่เกิน 99,999,999.99 ทศนิยมไม่เกิน 2 ตำแหน่ง
+- 
+note: ไม่บังคับ ยาวไม่เกิน 255 ตัวอักษร
+- 
+is_paid: 0 หรือ 1 ถ้าไม่ส่งมาใช้ 0
+- 
+ข้อมูลไม่ผ่านตอบ 422 พร้อมรายชื่อฟิลด์ที่ผิด (รูปแบบในหัวข้อ 5)
+- 
+หน้าเว็บ escape ข้อความทุกช่องก่อนแสดงผล เพื่อกัน XSS
+- 
+Query ฐานข้อมูลใช้ prepared statement ทุกจุด
+
+## 5. API ของ CRUD
+ทุก stack เปิด endpoint ชุดเดียวกัน path เดียวกัน รูปแบบ response เดียวกัน ข้อมูลทั้งหมดเป็น JSON (UTF-8) path ไม่มีนามสกุลไฟล์ จึงต้องมี rewrite ใน Apache และ Nginx ซึ่งเป็นอีกหนึ่งจุดทดสอบ
+Method
+Path
+สำเร็จ
+ข้อผิดพลาดที่เป็นไปได้
+GET
+/api/debts
+200
+400 (พารามิเตอร์ผิด)
+GET
+/api/debts/{id}
+200
+404
+POST
+/api/debts
+201
+400 (JSON เสีย), 422
+PUT
+/api/debts/{id}
+200
+400, 404, 422
+DELETE
+/api/debts/{id}
+204 (ไม่มี body)
+404
+GET
+/api/summary
+200
+-
+รูปแบบข้อมูล
+- 
+amount ส่งเป็น string สองทศนิยม เช่น "150.00" เพื่อกันผลต่างของการปัดเลขทศนิยมระหว่าง PHP, JavaScript และ Python
+- 
+เวลาทุกค่าเป็น UTC รูปแบบ ISO 8601 เช่น "2026-10-19T10:00:00Z" (ตั้ง time zone ของ DB session เป็น +00:00)
+- 
+is_paid ส่งเป็นตัวเลข 0 หรือ 1
+ตัวอย่างแถวหนึ่งรายการ
+```
+
+```
+
+ตัวอย่างผลของ GET /api/debts?page=1&per_page=20
+```
+
+```
+
+ตัวอย่างผลของ GET /api/summary
+```
+
+```
+
+รูปแบบ error
+Status
+Body
+400
+{"error": "invalid_json"} หรือ {"error": "bad_params"}
+404
+{"error": "not_found"}
+405
+{"error": "method_not_allowed"}
+422
+{"error": "validation_failed", "fields": {"amount": "ต้องมากกว่า 0"}}
+429
+{"error": "rate_limited", "retry_after": 37} (หน่วยวินาที)
+500
+{"error": "server_error"} ห้ามแสดง stack trace หรือรหัสผ่านใน body
+
+## 6. ฟีเจอร์ทดสอบ Bandwidth
+เครื่องมือชุดนี้วัดความเร็ว download และ upload ผ่านแต่ละ stack รวมถึงว่า SWH จำกัดขนาดไฟล์ หรือหน่วงความเร็วเมื่อมีหลาย connection หรือไม่ Endpoint ในหัวข้อนี้ต้องส่ง header X-Test-Token ตามหัวข้อ 12
+Endpoint
+Method
+Path
+พฤติกรรม
+GET
+/download/{mb}
+ส่งไฟล์สุ่มขนาด 1, 10 หรือ 100 MB ค่าอื่นตอบ 400
+POST
+/upload
+รับไฟล์ผ่าน multipart/form-data ช่อง file นับขนาดไฟล์ (ไม่รวมส่วนหัว multipart) แล้วทิ้ง ไม่เก็บลงดิสก์
+ข้อกำหนดของ /download/{mb}
+- 
+ข้อมูลเป็น byte สุ่มที่บีบอัดไม่ได้ เพื่อไม่ให้ gzip ทำให้ตัวเลขเพี้ยน
+- 
+ส่งแบบ stream ทีละ 64 KB ห้ามโหลดทั้งไฟล์เข้าหน่วยความจำ (เป้าหมาย: process ใช้ RAM เพิ่มไม่เกิน 20 MB ระหว่างส่งไฟล์ 100 MB)
+- 
+ตั้ง Content-Length เท่ากับ mb × 1,048,576 byte, Content-Type: application/octet-stream, Cache-Control: no-store
+- 
+ห้ามมี Content-Encoding ใน response (ตรวจว่า server ไม่บีบอัดไฟล์ไบนารีเอง)
+ข้อกำหนดของ /upload
+- 
+รับไฟล์ได้ถึง 100 MB ถ้า server ปฏิเสธก่อนถึงขนาดนี้ ให้จดขนาดที่ผ่านล่าสุดเป็นผลทดสอบ (limit ของ PHP, Nginx และ proxy มักต่างกัน)
+- 
+ตอบ {"received_bytes": 10485760, "duration_ms": 842}
+- 
+เกินขนาดที่ยอมรับตอบ 413 {"error": "payload_too_large"}
+ส่วนควบคุมในหน้า /test
+- 
+ปุ่ม Download 1 / 10 / 100 MB และ Upload 1 / 10 / 100 MB (หน้าเว็บสร้างไฟล์สุ่มฝั่ง browser)
+- 
+ปุ่ม "5 พร้อมกัน" ดาวน์โหลดไฟล์ 10 MB พร้อมกัน 5 connection เพื่อดูว่าความเร็วรวมถูกบีบหรือไม่
+- 
+แต่ละขนาดรัน 3 รอบ แสดงค่ามัธยฐาน
+ค่าที่แสดง
+ค่า
+วิธีคำนวณ
+ความเร็ว (Mbps)
+byte × 8 ÷ เวลารวม (วินาที) ÷ 1,000,000
+TTFB (ms)
+เวลาตั้งแต่ส่ง request จนได้ byte แรก
+เวลารวม (ms)
+ตั้งแต่ส่ง request จนรับครบ
+ความเร็วของ 5 connection
+ผลรวม byte ของทุก connection ÷ เวลาที่ใช้ทั้งหมด
+ปริมาณข้อมูลที่ใช้
+ต่อหนึ่ง stack: download (1 + 10 + 100) × 3 รอบ + 5 × 10 MB = 383 MB, upload (1 + 10 + 100) × 3 รอบ = 333 MB รวม 716 MB ทั้ง 4 stack ราว 2.9 GB ให้ตรวจโควตา bandwidth ของ package ที่ใช้ทดสอบก่อนเริ่ม
+ตัวเลขจากหน้า /test รวมเส้นทางเครือข่ายของ client ด้วย จึงต้องทดสอบจากอย่างน้อย 2 ที่ตั้ง (ดูหัวข้อ 11) และใช้ curl -w เทียบอีกชั้น
+
+## 7. ฟีเจอร์ทดสอบ Caching
+แยกทดสอบ 3 ชั้น: browser cache (ควบคุมด้วย header), cache ฝั่ง server หรือ proxy (มองเห็นจากค่าที่ซ้ำ) และการบีบอัดของ web server แอปต้องไม่ทำสิ่งเหล่านี้เอง ยกเว้นข้อ app-level cache เพื่อให้ผลสะท้อนการตั้งค่าของ SWH จริง
+Endpoint
+Method
+Path
+Header สำคัญ
+ใช้ทดสอบ
+GET
+/cache/static
+Cache-Control: public, max-age=60, ETag, Last-Modified (ค่าคงที่)
+browser cache และ conditional request
+GET
+/cache/none
+Cache-Control: no-store
+ตรวจว่าไม่ถูก cache
+GET
+/cache/time
+Cache-Control: public, max-age=10
+ตรวจ cache ฝั่ง server หรือ proxy
+GET
+/cache/gzip
+ไม่ใส่ Content-Encoding เอง
+การบีบอัดของ web server
+GET
+/api/summary
+X-App-Cache: HIT หรือ MISS
+app-level cache
+GET
+/api/cache-stats
+-
+จำนวน hit และ miss ของ app-level cache
+DELETE
+/api/cache
+-
+ล้าง app-level cache และตัวนับ
+ข้อกำหนดของแต่ละ endpoint
+- 
+/cache/static: body คงที่ขนาดประมาณ 2 KB, ETag คำนวณจากเนื้อหา, ถ้า request มี If-None-Match ตรงกันตอบ 304 ไม่มี body
+- 
+/cache/none: body เดียวกับ /cache/static แต่ใส่ no-store
+- 
+/cache/time: ตอบ {"server_time": "2026-10-19T10:00:00Z", "unix_ms": 1792404000000} คำนวณใหม่ทุกครั้งที่แอปถูกเรียก
+- 
+/cache/gzip: ข้อความธรรมดาขนาด 204,800 byte (200 KiB) บีบอัดได้ดี Content-Type: text/plain; charset=utf-8
+- 
+/api/summary: แอปเก็บผลลัพธ์ไว้ในไฟล์ cache/summary.json นาน 10 วินาที ถ้ายังไม่หมดอายุตอบ X-App-Cache: HIT โดยไม่ query DB การ create, update, delete แถวใน debts ต้องลบไฟล์นี้ทันที
+- 
+/api/cache-stats: ตอบ {"hits": 7, "misses": 3} ตัวนับเก็บในไฟล์ cache/stats.json ค่าอาจคลาดเคลื่อนเล็กน้อยเมื่อมี request พร้อมกัน ถือเป็นค่าประมาณ
+รายการตรวจ
+#
+ตรวจอะไร
+วิธี
+ผลที่คาดหวัง
+1
+Browser cache
+เปิด /cache/static สองครั้งใน 60 วินาที ดู DevTools
+ครั้งที่สองมาจาก cache ไม่ยิงไป server
+2
+Conditional request
+curl -i -H 'If-None-Match: "<etag>"' /cache/static
+304 และไม่มี body
+3
+no-store
+เปิด /cache/none ซ้ำ
+ทุกครั้งยิงไป server
+4
+Cache ฝั่ง server
+curl /cache/time สองครั้งห่างกันไม่เกิน 1 วินาที เทียบ unix_ms
+ค่าเท่ากัน = มี cache ค่าต่างกัน = ไม่มี (จดไว้เป็นผล ไม่ถือว่าผิด)
+5
+Compression
+curl -i -H 'Accept-Encoding: gzip, br' /cache/gzip
+มี Content-Encoding เป็น gzip หรือ br และขนาดที่รับน้อยกว่า 25% ของ 204,800 byte
+6
+App-level cache
+เรียก /api/summary สองครั้งใน 10 วินาที แล้วสร้างแถวใหม่ แล้วเรียกอีกครั้ง
+MISS, HIT, MISS ตามลำดับ และรอ 11 วินาทีแล้วเรียกใหม่ได้ MISS
+7
+ไฟล์ static
+ดู header ของ app.js และ style.css
+มี ETag หรือ Last-Modified และจด Cache-Control ที่ server ให้มา
+บาง server อาจแก้ ETag เป็นแบบ weak (W/) หรือต่อท้ายด้วย -gzip เมื่อบีบอัด response ให้จดไว้ ไม่ถือว่าผิด
+
+## 8. ฟีเจอร์ทดสอบ API Request
+ชุดนี้วัด latency, ความสามารถรับ request พร้อมกัน, การส่งต่อ header ผ่าน proxy, การจัดการข้อมูลปริมาณมาก และ rate limit Endpoint ที่หนัก (/api/slow และ /api/seed) ต้องส่ง header X-Test-Token ตามหัวข้อ 12
+Header ที่ทุก /api/* ต้องมี
+- 
+X-Stack: ค่า apache, nginx, node หรือ python ให้หน้า /test ติดป้ายผลได้ถูก
+- 
+Server-Timing: app;dur=<ms>: เวลาที่ใช้ในแอป ใช้แยกเวลาของแอปออกจากเวลาของเครือข่ายและ web server
+Endpoint
+Method
+Path
+พฤติกรรม
+GET
+/api/ping
+ตอบ {"pong": true, "stack": "node", "unix_ms": 1792404000000} ไม่แตะ DB
+GET
+/api/ping?db=1
+เหมือนข้างบน แต่รัน SELECT 1 และเพิ่มฟิลด์ db_ms
+GET
+/api/slow?ms=500
+หน่วงตามค่า ms (0 ถึง 10,000 ค่าอื่นตอบ 400) แล้วตอบ {"slept_ms": 500}
+GET, POST, PUT, DELETE
+/api/echo
+สะท้อน request กลับ (รายละเอียดด้านล่าง)
+POST
+/api/seed?n=1000&reset=1
+สร้างข้อมูลจำลอง n แถว (1 ถึง 10,000) ถ้า reset=1 ลบแถว seed เดิมก่อน ตอบ {"inserted": 1000, "duration_ms": 412}
+DELETE
+/api/seed
+ลบแถว seed ทั้งหมด ตอบ {"deleted": 1000}
+GET
+/api/limited
+จำกัด 10 request ต่อนาทีต่อ IP เกินตอบ 429
+รายละเอียด /api/slow
+แต่ละ stack ใช้การหน่วงแบบที่เป็นธรรมชาติของ runtime: PHP และ Python กัก worker ไว้ตลอดเวลาที่หน่วง ส่วน Node ใช้ timer ที่ไม่กัก event loop เพื่อสะท้อนว่าเมื่อมี request พร้อมกัน แต่ละ stack ตอบสนองต่างกันอย่างไร ใช้ทดสอบ timeout ของ proxy ด้วย (ลอง ms=10000 เทียบกับค่า timeout ของ web server)
+รายละเอียด /api/echo
+ตอบ JSON ที่มีฟิลด์: method, path, query, protocol (http หรือ https ตามที่แอปมองเห็น), client_ip (IP ที่แอปเห็น), headers (เฉพาะ Host, User-Agent, X-Forwarded-For, X-Forwarded-Proto, X-Real-IP, Content-Type, Content-Length), body_size และ body_preview (1 KB แรก) ห้ามสะท้อน Authorization และ Cookie รับ body ได้ไม่เกิน 1 MB เกินตอบ 413 ใช้ตรวจว่า proxy ส่ง IP จริงและโปรโตคอลมาถูกไหม และ method PUT กับ DELETE ผ่านได้ไหม
+รายละเอียด /api/limited
+- 
+นับแบบ fixed window ต่อนาทีในตาราง rate_limits โดยใช้ IP ที่แอปเห็น
+- 
+ทุก response ใส่ X-RateLimit-Limit: 10 และ X-RateLimit-Remaining
+- 
+ตอบ 429 ต้องมี Retry-After (วินาที) ตรงกับค่า retry_after ใน body
+- 
+ถ้า IP ที่แอปเห็นเป็น IP ของ proxy ไม่ใช่ของ client ให้จดไว้เป็นผลทดสอบ เพราะแปลว่า rate limit ตาม IP ใช้ไม่ได้จนกว่าจะตั้ง header ส่งต่อ
+แผง Load test ในหน้า /test
+ตัวเลือก
+ค่า
+Endpoint เป้าหมาย
+เลือกจาก /api/ping, /api/ping?db=1, /api/debts?page=1, /api/summary, /api/slow?ms=200, /api/limited
+จำนวน request รวม
+ค่าเริ่มต้น 100 สูงสุด 1,000
+Concurrency
+ค่าเริ่มต้น 10 สูงสุด 50
+ผลที่แสดง: จำนวนสำเร็จ, จำนวน error แยกตาม status, latency เฉลี่ย, มัธยฐาน, p95, สูงสุด, request ต่อวินาที และค่าเฉลี่ยของ Server-Timing โดย p95 คือค่าลำดับที่ ceil(0.95 × N) หลังเรียงจากน้อยไปมาก
+Browser จำกัดจำนวน connection ต่อ host (ประมาณ 6 connection บน HTTP/1.1) ค่า concurrency ที่สูงกว่านั้นจึงเป็นการต่อคิวในฝั่ง browser ถ้าต้องการ concurrency จริง ให้ใช้ hey หรือ ab จากภายนอก (คำสั่งอยู่ในหัวข้อ 11)
+
+## 9. แนวทางเขียนแต่ละ Stack
+ทุก stack ต้องให้ผลตามหัวข้อ 4 ถึง 8 ทุกประการ ส่วนวิธีเขียนเป็นอิสระ ตราบที่ไม่ผิดข้อกำหนดด้านล่าง
+ส่วนที่เหมือนกันทุก stack
+- 
+ไฟล์หน้าเว็บ (index.html, test.html, app.js, style.css) เป็นไฟล์เดียวกัน byte ต่อ byte
+- 
+ค่าเชื่อมต่อ DB อยู่ในไฟล์ config หรือ environment ที่อยู่นอก document root ห้ามอยู่ในไฟล์ที่เปิดผ่านเว็บได้
+- 
+ทุก connection ตั้ง time zone เป็น +00:00 และใช้ prepared statement
+- 
+ขนาดไฟล์ที่ /upload รายงานเป็นขนาดของไฟล์ในช่อง file เท่านั้น ไม่รวมส่วนหัว multipart ยอมให้คลาดเคลื่อนไม่เกิน 1%
+Apache + PHP
+- 
+ทางเข้าเดียวคือ index.php และไฟล์ .htaccess ส่งทุก request ที่ไม่ใช่ไฟล์จริงไปที่ index.php (ต้องเปิด mod_rewrite และ AllowOverride)
+- 
+DB ใช้ PDO MySQL
+- 
+/download อ่านและส่งทีละ 64 KB พร้อม flush() ปิด output buffering ก่อน และตรวจว่า max_execution_time ไม่ตัดการส่งไฟล์ 100 MB
+- 
+/upload อ่านขนาดจาก $_FILES ผลจะถูกจำกัดด้วย upload_max_filesize และ post_max_size ให้จดค่าที่พบ
+- 
+PUT และ DELETE อ่าน body จาก php://input
+- 
+ห้ามเปิด ob_gzhandler ในโค้ด ให้ mod_deflate ของ server ทำหน้าที่บีบอัด
+Nginx + PHP-FPM
+- 
+ใช้โค้ด PHP ชุดเดียวกับเวอร์ชัน Apache ไม่แก้โค้ด เปลี่ยนเฉพาะ routing
+- 
+Nginx ไม่อ่าน .htaccess จึงต้องตั้ง try_files $uri /index.php?$query_string; ผ่านช่องทางที่ SWH เปิดให้ปรับ config ของโดเมน ถ้า SWH ไม่เปิดให้ปรับ ให้บันทึกเป็นข้อจำกัด
+- 
+ถ้า SWH ใช้ Nginx เป็น reverse proxy หน้า Apache จะใช้ .htaccess ได้เหมือนเดิม ให้จดโหมดที่พบ
+- 
+ให้ PHP ส่ง header X-Accel-Buffering: no ใน /download เพื่อให้ Nginx ส่งแบบ stream
+- 
+ค่าที่ต้องจด: client_max_body_size (กระทบ /upload), fastcgi_read_timeout (กระทบ /api/slow)
+Node + Express
+- 
+ทางเข้า app.js อ่านพอร์ตจาก environment variable PORT
+- 
+DB ใช้ mysql2 แบบ connection pool (ขนาด 5)
+- 
+/download ใช้ res.write ทีละ 64 KB และรอสัญญาณ drain ก่อนเขียนต่อ ห้ามสะสมในหน่วยความจำ
+- 
+/upload นับ byte จาก stream โดยไม่เก็บลงดิสก์ (เช่น busboy)
+- 
+เปิด trust proxy เฉพาะเมื่อยืนยันแล้วว่าอยู่หลัง proxy ของ SWH เพื่อให้ client_ip ถูก
+- 
+ไฟล์ static ใช้ express.static (มี ETag ให้โดยค่าเริ่มต้น)
+- 
+ต้องหาวิธี start, stop และ restart แอปบน SWH ให้ได้ และจดเวลาที่แอปกลับมาตอบหลัง restart
+Python + Flask
+- 
+ทางเข้า app.py ที่เปิด object application สำหรับ WSGI (ถ้าใช้ Passenger ให้ตั้ง passenger_wsgi.py ชี้มาที่ตัวนี้)
+- 
+DB ใช้ PyMySQL (หรือ driver อื่นที่ใช้ได้บน SWH)
+- 
+/download ใช้ generator ที่ส่งทีละ 64 KB ผ่าน Response แบบ stream
+- 
+/upload ต้องไม่เก็บไฟล์ลงดิสก์ถาวร และรายงานเฉพาะขนาดไฟล์ตามข้อกำหนดข้างต้น
+- 
+จำนวน worker และ thread ของ WSGI กำหนดว่า /api/slow รับ request พร้อมกันได้กี่ตัว ให้จดค่าที่ SWH ตั้งไว้
+- 
+ใช้ virtualenv ของ account และจด dependency ใน requirements.txt
+
+## 10. การติดตั้งและตั้งค่าบน DirectAdmin
+ขั้นตอนเดียวกันใช้กับทั้ง 4 stack โดยเพิ่มขั้นตอนเฉพาะของ Node และ Python เท่านั้น
+- 
+สร้างโดเมนย่อย apache, nginx, node, python ใต้ {domain} และออก SSL (Let's Encrypt) ให้ครบทุกตัว
+- 
+เลือกเวอร์ชัน PHP 8.x ให้ apache.{domain} และ nginx.{domain} และจดเวอร์ชันที่ใช้
+- 
+สร้าง MySQL database และ user แยกต่อ stack (tb_apache, tb_nginx, tb_node, tb_python) แล้วรัน SQL ในหัวข้อ 3
+- 
+อัปโหลดไฟล์ตามโครงสร้างในหัวข้อ 13 และสร้างไฟล์ config ของแต่ละ stack
+- 
+ตั้งสิทธิ์ไฟล์ตามตารางด้านล่าง
+- 
+เฉพาะ Node และ Python: ตั้งค่าแอปตามวิธีที่ SWH รองรับ แล้วเริ่มแอป
+- 
+Smoke test: GET /api/ping ของแต่ละ stack ต้องตอบ 200 และ X-Stack ตรงกับ stack นั้น
+- 
+เริ่มแผนทดสอบในหัวข้อ 11
+ค่า config ที่ทุก stack ต้องมี
+ชื่อ
+ความหมาย
+ตัวอย่าง
+DB_HOST
+โฮสต์ MySQL
+localhost
+DB_NAME
+ชื่อ database
+<username>_tb_node
+DB_USER
+ชื่อ user
+<username>_tb
+DB_PASS
+รหัสผ่าน (ห้ามใส่ใน repo)
+-
+APP_STACK
+ค่าที่ใส่ใน X-Stack
+node
+CACHE_DIR
+โฟลเดอร์ cache ที่เขียนได้ นอก document root
+/home/<username>/tb_node_cache
+PORT
+พอร์ตภายในของแอป (เฉพาะ Node และ Python ที่รันหลัง proxy)
+ตามที่ SWH กำหนด
+นอกจากนี้ทุก stack ต้องมี TEST_TOKEN (ค่าสุ่มยาวอย่างน้อย 24 ตัวอักษร) ใช้กับตัวกั้นในหัวข้อ 12 เก็บแยกต่อ stack ในไฟล์ config ห้ามใส่ในโค้ดหรือ repo
+สิทธิ์ไฟล์
+รายการ
+สิทธิ์
+ไฟล์ทั่วไปใน document root
+644
+โฟลเดอร์ใน document root
+755
+ไฟล์ config ที่มีรหัสผ่าน
+600 (หรือ 640 ถ้าจำเป็น) และอยู่นอก document root
+CACHE_DIR
+เขียนได้โดย user ของ account เท่านั้น
+Log ที่ต้องเปิดดูระหว่างทดสอบ
+- 
+error log ของโดเมนจากแผงควบคุมของ SWH
+- 
+log ของแอป Node และ Python เขียนลงโฟลเดอร์ logs/ ของแอป โดยบันทึกเฉพาะตอนเริ่มทำงานและ error ไม่บันทึกทุก request
+
+## 11. แผนทดสอบและเกณฑ์ผ่าน
+ทดสอบทีละ stack ตามลำดับ ทำงานเชิงฟังก์ชันก่อน ตามด้วย caching, API request และจบด้วย bandwidth ที่กินโควตามากที่สุด เกณฑ์ตัวเลขด้านล่างเป็นค่าเริ่มต้นที่เสนอ ให้ปรับหลังได้ผล baseline รอบแรก
+กติกาเพื่อให้เทียบกันได้
+- 
+ทดสอบทั้ง 4 stack ในช่วงเวลาเดียวกันและห่างจากช่วงที่ SWH รันงานสำรองข้อมูล
+- 
+ใช้ client และเครือข่ายเดียวกัน และทดสอบซ้ำจากอย่างน้อย 2 ที่ตั้งหรือ ISP (เช่น เครือข่ายบ้าน กับ hotspot มือถือ หรือ VPS)
+- 
+ทุกการวัดรัน 3 รอบ บันทึกค่ามัธยฐาน
+- 
+ก่อนวัด API ที่ต้องมีข้อมูล ให้เรียก POST /api/seed?n=10000&reset=1 และหลังทดสอบเรียก DELETE /api/seed
+- 
+ทุกผลต้องจดวันที่ เวลา เวอร์ชัน runtime และโหมด web server ที่พบ
+Endpoint ที่ติดตัวกั้น (/download, /upload, /api/seed, /api/slow และ DELETE /api/cache) ต้องส่ง header X-Test-Token ทุกครั้งที่เรียก ดูหัวข้อ 12
+เกณฑ์ผ่านและรายการบันทึกผล
+#
+หมวด
+ทดสอบ
+เกณฑ์
+ประเภท
+1
+ฟังก์ชัน
+CRUD ครบ 5 operation ผ่านหน้าเว็บและ curl
+ทำงานถูกทั้งหมด
+ต้องผ่าน
+2
+ฟังก์ชัน
+ส่งข้อมูลผิด 6 แบบ: ชื่อว่าง, amount เป็น 0, amount ติดลบ, amount 3 ทศนิยม, note ยาว 256 ตัว, JSON เสีย
+ได้ 422 หรือ 400 ตามหัวข้อ 5
+ต้องผ่าน
+3
+ฟังก์ชัน
+PUT และ DELETE ไม่ถูกบล็อก
+ได้ 200 และ 204
+ต้องผ่าน
+4
+ฟังก์ชัน
+เปิดแบบ http และใบรับรอง SSL
+เปลี่ยนไป https และใบรับรองถูกต้อง
+ต้องผ่าน
+5
+ฟังก์ชัน
+Restart แอป (Node และ Python)
+/api/ping ตอบ 200 ภายใน 60 วินาที
+ต้องผ่าน
+6
+Caching
+รายการตรวจ 1 ถึง 3, 5 ถึง 7 ในหัวข้อ 7
+ตามผลที่คาดหวังของแต่ละข้อ
+ต้องผ่าน
+7
+Caching
+รายการตรวจ 4 (cache ฝั่ง server)
+มีหรือไม่มี
+บันทึกผล
+8
+API
+/api/ping 100 request, concurrency 10
+error 0% และ app time (Server-Timing) p95 ต่ำกว่า 50 ms
+ต้องผ่าน
+9
+API
+/api/debts?page=1 เมื่อมี 10,000 แถว, 100 request, concurrency 10
+error 0% และ app time p95 ต่ำกว่า 100 ms
+ต้องผ่าน
+10
+API
+/api/limited เรียกต่อเนื่อง 11 ครั้งภายในนาทีเดียว (เริ่มต้นนาที ไม่เกินวินาทีที่ 10 เพื่อไม่ให้คร่อมช่วงนับ)
+10 ครั้งแรกได้ 200 ครั้งที่ 11 ได้ 429 พร้อม Retry-After
+ต้องผ่าน
+11
+API
+/api/echo ผ่าน proxy
+จด client_ip, protocol และ header X-Forwarded-* ที่เห็น
+บันทึกผล
+12
+API
+/api/slow?ms=10000
+ได้ 200 หรือจดค่า timeout ที่ถูกตัด
+บันทึกผล
+13
+API
+/api/slow?ms=1000 พร้อมกัน 5 request
+จดเวลารวมที่ใช้จนเสร็จทั้ง 5
+บันทึกผล
+14
+Bandwidth
+/download/100
+ได้ไฟล์ครบ 104,857,600 byte และไม่มี 5xx
+ต้องผ่าน
+15
+Bandwidth
+ความเร็ว download 1, 10, 100 MB และ 5 connection พร้อมกัน
+จดความเร็วและ TTFB
+บันทึกผล
+16
+Bandwidth
+/upload ขนาด 1, 10, 100 MB
+จดขนาดใหญ่สุดที่ผ่านและสาเหตุที่ถูกปฏิเสธ
+บันทึกผล
+คำสั่งทดสอบจากภายนอก
+```
+"' https://node.{domain}/cache/static
+
+# Compression (ดู Content-Encoding และขนาดที่รับ)
+curl -s -o /dev/null -D - -w 'size=%{size_download}\n' -H 'Accept-Encoding: gzip, br' https://node.{domain}/cache/gzip]]>
+```
+
+แบบฟอร์มสรุปผล
+รายการ
+Apache
+Nginx
+Node
+Python
+เวอร์ชัน runtime
+
+โหมด web server ที่พบ
+
+ข้อ 1 ถึง 4 (ฟังก์ชัน) ผ่านครบหรือไม่
+
+ข้อ 6 (caching) ผ่านหรือไม่
+
+มี cache ฝั่ง server หรือไม่
+
+/api/ping app time p95 (ms)
+
+/api/debts app time p95 (ms)
+
+ข้อ 10 (rate limit) ผ่านหรือไม่
+
+IP ที่แอปเห็น (client หรือ proxy)
+
+/api/slow?ms=10000 ผลที่ได้
+
+5 × slow?ms=1000 เสร็จใน (วินาที)
+
+Download 100 MB (Mbps)
+
+Download 5 connection รวม (Mbps)
+
+Upload ใหญ่สุดที่ผ่าน (MB)
+
+เวลา restart กลับมาตอบ (วินาที)
+
+ปัญหาที่พบ
+
+## 12. ความปลอดภัยและข้อจำกัด
+Endpoint ทดสอบกินทรัพยากรหนัก (ไฟล์ 100 MB, หน่วง 10 วินาที, seed 10,000 แถว) บน shared hosting อาจกระทบ account อื่นหรือโดนระบบจำกัดการใช้งาน จึงต้องมีตัวกั้นและเพดานในตัวแอป
+ตัวกั้นด้วย token
+Endpoint ที่หนักต้องส่ง header X-Test-Token ที่ตรงกับ TEST_TOKEN ในไฟล์ config (เปรียบเทียบแบบ constant-time) ถ้าไม่ตรงหรือไม่ส่งมา ตอบ 403 {"error": "forbidden"} หน้า /test มีช่องกรอก token และเก็บไว้ในหน่วยความจำของหน้านั้นเท่านั้น
+Endpoint
+ตัวกั้น
+/download/{mb}, /upload
+ต้องมี token
+/api/seed (POST, DELETE)
+ต้องมี token
+/api/slow
+ต้องมี token
+DELETE /api/cache
+ต้องมี token
+/cache/*, /api/ping, /api/echo, /api/limited, /api/cache-stats
+ไม่ต้องมี (ขนาดเล็กและไม่แก้ข้อมูล)
+CRUD /api/debts, /api/summary
+ไม่ต้องมี (ข้อมูลทั้งหมดเป็นข้อมูลจำลอง)
+เพดานที่ต้องบังคับในโค้ด
+รายการ
+เพดาน
+ขนาด download
+100 MB
+ขนาด upload
+100 MB
+เวลาหน่วงของ /api/slow
+10,000 ms
+จำนวนแถวต่อการ seed
+10,000
+ขนาด body ของ /api/echo
+1 MB
+Load test ในหน้า /test
+1,000 request และ concurrency 50
+ข้อปฏิบัติอื่น
+- 
+ใช้ข้อมูลจำลองเท่านั้น ห้ามกรอกชื่อและยอดหนี้ของเพื่อนจริงลงระบบทดสอบ
+- 
+ใส่ robots.txt แบบ Disallow: / และ header X-Robots-Tag: noindex เพื่อไม่ให้ crawler เรียก /download/100
+- 
+ไม่เปิด CORS ใช้เฉพาะ same-origin
+- 
+ตอบ error ทั่วไปเท่านั้น ห้ามแสดง stack trace, path ของเซิร์ฟเวอร์ หรือข้อมูลการเชื่อมต่อ DB ใน response
+- 
+ถ้าทดสอบบนโฮสต์ของผู้ให้บริการอื่น ให้ตรวจนโยบาย fair-use ก่อนรัน load test
+- 
+เมื่อทดสอบเสร็จ ให้ปิดหรือลบโดเมนย่อย, database และ process ของแอปทดสอบ ไม่ปล่อยให้ endpoint หนักเปิดทิ้งไว้
+
+## 13. สิ่งที่ส่งมอบ ลำดับงาน และข้อที่ต้องตัดสินใจ
+สิ่งที่ส่งมอบ
+- 
+โค้ดครบทั้ง 4 stack (โค้ด PHP ชุดเดียวใช้กับทั้ง Apache และ Nginx)
+- 
+schema.sql ตามหัวข้อ 3
+- 
+ตัวอย่างค่า config ของ Nginx (try_files และค่าที่ต้องจด)
+- 
+ไฟล์ RESULTS.md เป็นแบบฟอร์มสรุปผลตามหัวข้อ 11
+โครงสร้างโฟลเดอร์
+```
+
+```
+
+ลำดับงาน
+- 
+ทำ schema.sql และหน้าเว็บที่ใช้ร่วมกัน เสร็จเมื่อหน้าเว็บคุยกับ API ตามหัวข้อ 5 ได้
+- 
+เขียนเวอร์ชัน PHP แล้วติดตั้งบน apache.{domain} เสร็จเมื่อผ่านข้อ 1 ถึง 4 ในหัวข้อ 11
+- 
+ติดตั้งโค้ดชุดเดียวกันบน nginx.{domain} พร้อมตั้ง routing ของ Nginx
+- 
+เขียนและติดตั้งเวอร์ชัน Node
+- 
+เขียนและติดตั้งเวอร์ชัน Python
+- 
+รันแผนทดสอบหัวข้อ 11 ครบทุก stack และกรอกแบบฟอร์มสรุปผล
+- 
+สรุปผลเปรียบเทียบ แล้วปิดหรือลบระบบทดสอบตามหัวข้อ 12
+ข้อที่ต้องตัดสินใจก่อนเริ่มเขียนโค้ด
+- 
+โดเมนที่ใช้ทดสอบ ({domain}) คือโดเมนไหน
+- 
+SWH node ที่ใช้ทดสอบตั้งโหมด web server แบบไหน (Apache, Nginx หรือ Nginx หน้า Apache)
+- 
+SWH รองรับการรัน Node และ Python ด้วยวิธีใด (Passenger, proxy ไปพอร์ตภายใน หรือยังไม่รองรับ)
+- 
+Package ที่ใช้ทดสอบมีโควตา bandwidth, CPU, RAM และจำนวน process เท่าไร (ใช้ประเมินปริมาณข้อมูลราว 2.9 GB ในหัวข้อ 6)
+- 
+เกณฑ์ตัวเลขในหัวข้อ 11 ใช้ตามที่เสนอ หรือมีค่าที่ต้องการเอง
+- 
+ยืนยันใช้ MySQL ตามที่ระบุใน spec
