@@ -5,7 +5,7 @@ const INPUT_RE = /^\d*\.?\d{0,2}$/;
 
 const thousands = new Intl.NumberFormat('th-TH', { maximumFractionDigits: 0 });
 
-// "12345.00" -> "฿12,345", "150.50" -> "฿150.50"
+// "2500.00" -> "฿2,500", "150.50" -> "฿150.50"
 export function formatBaht(amount) {
   const [intPart, frac = ''] = String(amount).split('.');
   const grouped = thousands.format(Number(intPart));

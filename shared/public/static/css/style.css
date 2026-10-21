@@ -460,7 +460,7 @@ svg { flex: none; }
 .btn--secondary:hover { filter: brightness(.96); }
 .btn--danger { background: var(--danger); color: var(--surface); }
 .btn--danger:hover { filter: brightness(.94); }
-.btn--text { height: auto; min-height: 44px; padding: 0 12px; border-radius: 12px; background: transparent; color: var(--ink); font-size: 14px; }
+.btn--text { height: auto; min-height: 44px; min-width: 44px; padding: 0 12px; border-radius: 12px; background: transparent; color: var(--ink); font-size: 14px; }
 .btn--text:hover { background: var(--chip); }
 .btn--text-ok { color: var(--ok-ink); }
 .btn--text-danger { color: var(--danger); }
