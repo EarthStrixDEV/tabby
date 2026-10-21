@@ -1,0 +1,16 @@
+DirectoryIndex index.html
+Options -Indexes
+
+RewriteEngine On
+
+# Pretty URL for the test page.
+RewriteRule ^test$ test.html [L]
+
+# Anything that is not an existing file or directory goes to the PHP front controller.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
+
+<IfModule mod_headers.c>
+    Header set X-Robots-Tag "noindex"
+</IfModule>
